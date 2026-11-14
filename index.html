@@ -1,0 +1,1640 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GD&amp;T in 3D</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Layout idea: the combined site's shell. Public landing page when signed out; when signed in, one workspace with
+   Learn (3D lessons + stack-up tools) and Manage (groups, requests, staff, content, roles), all gated by role. */
+:root{
+  --bg:#f3f4f2;
+  --surface:#fbfbfa;
+  --ink:#232a30;
+  --muted:#606b73;
+  --line:#dfe3e1;
+  --accent:#41627f;
+  --pass:#3f7a5c;
+  --fail:#a2504a;
+  --warn:#8a6d2f;
+  --font-display:"IBM Plex Sans",-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+  --font-body:"IBM Plex Sans",-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){--bg:#151a1d;--surface:#1b2125;--ink:#dce2e5;--muted:#98a3aa;--line:#2b3338;--accent:#93b1cc;--pass:#7cb294;--fail:#d28c84;--warn:#cfb06e;color-scheme:dark}
+}
+:root[data-theme="dark"]{--bg:#151a1d;--surface:#1b2125;--ink:#dce2e5;--muted:#98a3aa;--line:#2b3338;--accent:#93b1cc;--pass:#7cb294;--fail:#d28c84;--warn:#cfb06e;color-scheme:dark}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--font-body);font-size:15.5px;line-height:1.6}
+a{color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+h1,h2,h3{font-family:var(--font-display);font-weight:600;text-wrap:balance;line-height:1.2;margin:0}
+h1{font-size:clamp(28px,4vw,38px);letter-spacing:-.01em}
+h2{font-size:21px}
+h3{font-size:16.5px}
+.wrap{max-width:1200px;margin:0 auto;padding:0 20px}
+.mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)}
+.small{font-size:13.5px}
+
+/* top bar */
+.top{background:var(--surface);border-bottom:1px solid var(--line)}
+.top .wrap{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;padding-top:10px;padding-bottom:10px}
+.brand{font-weight:600;font-size:16px}
+.mock{font:500 11.5px var(--font-mono);letter-spacing:.06em;text-transform:uppercase;color:var(--warn);border:1px solid color-mix(in srgb,var(--warn) 40%,var(--line));background:color-mix(in srgb,var(--warn) 8%,transparent);padding:2px 8px;border-radius:999px}
+.spacer{flex:1}
+.who{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:14px}
+.who label{color:var(--muted)}
+select,input[type=text],input[type=email],textarea{font:inherit;font-size:14.5px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:7px;padding:7px 9px;min-width:0}
+textarea{resize:vertical;min-height:70px;width:100%}
+select:disabled{color:var(--muted);background:transparent}
+.rolechip{font:500 12.5px var(--font-body);padding:3px 10px;border-radius:999px;border:1px solid color-mix(in srgb,var(--accent) 35%,var(--line));background:color-mix(in srgb,var(--accent) 8%,transparent);color:var(--accent);white-space:nowrap}
+.rolechip.student{border-color:var(--line);background:transparent;color:var(--muted)}
+
+/* buttons */
+.btn{font:500 14px var(--font-body);color:var(--ink);background:transparent;border:1px solid var(--line);border-radius:7px;padding:7px 12px;cursor:pointer;white-space:nowrap}
+.btn:hover:not(:disabled){border-color:color-mix(in srgb,var(--accent) 55%,var(--line));color:var(--accent);background:color-mix(in srgb,var(--accent) 5%,transparent)}
+.btn.primary{background:color-mix(in srgb,var(--accent) 13%,var(--surface));border-color:color-mix(in srgb,var(--accent) 45%,var(--line));color:var(--accent)}
+.btn.danger:hover:not(:disabled){border-color:color-mix(in srgb,var(--fail) 55%,var(--line));color:var(--fail);background:color-mix(in srgb,var(--fail) 6%,transparent)}
+.btn.sm{font-size:13px;padding:4px 9px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.link{background:none;border:0;padding:0;font:inherit;color:var(--accent);cursor:pointer;text-decoration:underline}
+
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:12px}
+.pad{padding:18px}
+.stack{display:grid;gap:14px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+
+/* status pills */
+.st{font:500 12px var(--font-body);padding:2px 9px;border-radius:999px;border:1px solid var(--line);color:var(--muted);white-space:nowrap}
+.st.active{color:var(--pass);border-color:color-mix(in srgb,var(--pass) 35%,var(--line));background:color-mix(in srgb,var(--pass) 9%,transparent)}
+.st.invited{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 35%,var(--line));background:color-mix(in srgb,var(--warn) 8%,transparent)}
+.st.draft{color:var(--muted)}
+.st.pub{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 35%,var(--line))}
+
+/* landing */
+.hero{padding:44px 0 20px;display:grid;grid-template-columns:minmax(0,1.3fr) minmax(300px,1fr);gap:28px;align-items:start}
+.hero p.lede{color:var(--muted);max-width:60ch;margin:12px 0 0;font-size:16.5px}
+.offer{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin:8px 0 28px}
+.offer .panel{padding:16px 18px}
+.offer .k{font:500 12px var(--font-mono);color:var(--muted);letter-spacing:.04em}
+.offer h3{margin:4px 0 6px}
+.offer p{margin:0;font-size:14.5px;color:var(--muted)}
+.form{display:grid;gap:10px}
+.form label{font-size:13.5px;font-weight:500;display:grid;gap:4px}
+.form .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.msg{font-size:14px;border-radius:8px;padding:9px 12px;border:1px solid var(--line)}
+.msg.ok{border-color:color-mix(in srgb,var(--pass) 35%,var(--line));background:color-mix(in srgb,var(--pass) 7%,transparent)}
+.msg.err{border-color:color-mix(in srgb,var(--fail) 35%,var(--line));background:color-mix(in srgb,var(--fail) 6%,transparent)}
+.msg.info{background:color-mix(in srgb,var(--accent) 5%,transparent)}
+
+/* app shell */
+.app{display:grid;grid-template-columns:210px minmax(0,1fr);gap:20px;padding:22px 0 40px}
+.side{position:sticky;top:12px;align-self:start;display:grid;gap:14px}
+.side .grp{font:500 11.5px var(--font-mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:4px 0 2px 10px}
+.side nav{display:grid;gap:2px}
+.side button{all:unset;cursor:pointer;padding:7px 10px;border-radius:7px;font-size:14.5px;color:var(--ink);display:flex;justify-content:space-between;gap:8px}
+.side button:hover{background:color-mix(in srgb,var(--accent) 6%,transparent)}
+.side button[aria-current="page"]{background:color-mix(in srgb,var(--accent) 11%,var(--surface));color:var(--accent);font-weight:500}
+.side button:focus-visible{outline:2px solid var(--accent)}
+.count{font:500 12px var(--font-mono);color:var(--muted)}
+.pagehead{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:end;gap:10px;margin-bottom:14px}
+.pagehead p{margin:4px 0 0;color:var(--muted);max-width:70ch}
+
+/* learn cards */
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
+.item{padding:16px;display:grid;gap:8px;align-content:start}
+.item .k{font:500 12px var(--font-mono);color:var(--muted)}
+.item p{margin:0;font-size:14px;color:var(--muted)}
+.item.locked{opacity:.6}
+.prog{display:flex;gap:10px;align-items:center;font-size:13px;color:var(--muted)}
+.bar{flex:1;height:6px;border-radius:3px;background:color-mix(in srgb,var(--line) 70%,transparent);overflow:hidden}
+.bar i{display:block;height:100%;background:color-mix(in srgb,var(--pass) 60%,var(--surface))}
+
+/* groups */
+.split{display:grid;grid-template-columns:240px minmax(0,1fr);gap:16px;align-items:start}
+.glist{display:grid;gap:6px}
+.gbtn{all:unset;cursor:pointer;display:grid;gap:2px;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--surface)}
+.gbtn:hover{border-color:color-mix(in srgb,var(--accent) 45%,var(--line))}
+.gbtn[aria-current="true"]{border-color:color-mix(in srgb,var(--accent) 55%,var(--line));background:color-mix(in srgb,var(--accent) 6%,var(--surface))}
+.gbtn:focus-visible{outline:2px solid var(--accent)}
+.gbtn b{font-weight:500}
+.gbtn span{font-size:12.5px;color:var(--muted)}
+.sec{border-top:1px solid var(--line);padding-top:14px;display:grid;gap:10px}
+.sec h3 small{font-weight:400;color:var(--muted);font-size:13px;margin-left:6px}
+.checks{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:6px}
+.checks label{display:flex;gap:8px;align-items:flex-start;font-size:14px;padding:6px 8px;border:1px solid var(--line);border-radius:7px}
+.checks input{margin-top:4px;accent-color:var(--accent)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.pchip{display:inline-flex;gap:6px;align-items:center;font-size:13.5px;padding:3px 4px 3px 10px;border:1px solid var(--line);border-radius:999px}
+.pchip button{all:unset;cursor:pointer;width:20px;height:20px;border-radius:50%;display:grid;place-items:center;color:var(--muted)}
+.pchip button:hover{color:var(--fail);background:color-mix(in srgb,var(--fail) 8%,transparent)}
+.tbl{width:100%;border-collapse:collapse;font-size:14px}
+.tbl th{text-align:left;font-weight:500;color:var(--muted);font-size:12.5px;padding:6px 8px;border-bottom:1px solid var(--line)}
+.tbl td{padding:8px;border-bottom:1px solid var(--line);vertical-align:middle}
+.tbl td.r,.tbl th.r{text-align:right}
+.tbl td.c,.tbl th.c{text-align:center}
+.tblwrap{overflow-x:auto}
+.who2{display:grid}
+.who2 small{color:var(--muted);font-size:12.5px}
+.empty{padding:14px;border:1px dashed var(--line);border-radius:9px;color:var(--muted);font-size:14px}
+.cell-ok{color:var(--pass);font-family:var(--font-mono)}
+.cell-no{color:var(--muted)}
+
+/* roles matrix */
+.matrix td.c{font-size:15px}
+.yes{color:var(--pass)} .no{color:color-mix(in srgb,var(--muted) 60%,transparent)} .part{color:var(--warn);font-size:12.5px}
+
+#toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:var(--surface);color:var(--ink);border:1px solid var(--line);border-radius:9px;padding:9px 14px;font-size:14px;box-shadow:0 6px 24px rgba(0,0,0,.08);max-width:min(560px,92vw);display:none}
+#toast.show{display:block}
+
+footer{font-size:13px;color:var(--muted);border-top:1px solid var(--line);padding:14px 0 30px;margin-top:10px}
+
+/* problem creator & player */
+.creator{display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,420px);gap:16px;align-items:start}
+.cside{position:sticky;top:12px}
+.vslot{height:380px;position:relative;border-radius:12px 12px 0 0;overflow:hidden;background:var(--bg)}
+.pviewer{position:absolute;inset:0}
+.pviewer canvas{display:block;width:100%;height:100%;touch-action:none}
+.vbar{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 12px;border-top:1px solid var(--line)}
+.fld{display:grid;gap:3px;font-size:12.5px;color:var(--muted)}
+.fld input[type=text],.fld select,.fld textarea{color:var(--ink);font-size:14px;padding:5px 7px}
+.fld input[type=checkbox]{width:18px;height:18px;accent-color:var(--accent);margin:6px 0}
+.frow{border:1px solid var(--line);border-radius:9px;padding:10px 12px;display:grid;gap:8px}
+.warns{margin:0;padding-left:18px;font-size:13.5px;color:var(--fail)}
+.fcfsvg{vertical-align:middle}
+.dtag{font:600 11px var(--font-mono);border:1px solid var(--line);border-radius:4px;padding:0 4px;color:var(--accent);margin-left:4px}
+table.ws input,table.ws select{padding:4px 6px;font-size:13.5px}
+table.ws tfoot td{border-bottom:0;padding-top:8px;font-weight:500}
+table.ws th .hint{font:500 11px var(--font-mono);color:var(--accent);letter-spacing:.02em}
+.errpick{display:flex;flex-wrap:wrap;gap:10px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.errpick input{width:18px;height:18px;accent-color:var(--accent)}
+.score-pill{font:600 14px var(--font-mono);padding:4px 12px;border-radius:999px;border:1px solid var(--line)}
+.score-pill.good{color:var(--pass);border-color:color-mix(in srgb,var(--pass) 35%,var(--line));background:color-mix(in srgb,var(--pass) 9%,transparent)}
+.score-pill.low{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 35%,var(--line));background:color-mix(in srgb,var(--warn) 8%,transparent)}
+.math{font:13px/1.7 var(--font-mono);background:color-mix(in srgb,var(--bg) 70%,var(--surface));border:1px solid var(--line);border-radius:7px;padding:8px 10px;overflow-x:auto}
+@media (max-width:1000px){ .creator{grid-template-columns:1fr} .cside{position:static} .vslot{height:300px} }
+
+@media (max-width:900px){
+  .hero{grid-template-columns:1fr}
+  .offer{grid-template-columns:1fr}
+  .app{grid-template-columns:1fr}
+  .side{position:static}
+  .side nav{display:flex;flex-wrap:wrap;gap:4px}
+  .side .grp{display:none}
+  .split{grid-template-columns:1fr}
+}
+@media (max-width:420px){ .wrap{padding:0 16px} .form .two{grid-template-columns:1fr} }
+@media (prefers-reduced-motion: reduce){ *{transition:none!important} }
+#viewer{position:fixed;inset:0;z-index:50;background:var(--bg);display:flex;flex-direction:column}
+#viewer[hidden]{display:none}
+#viewer .vbar{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line, rgba(0,0,0,.12));background:var(--surface)}
+#viewer .vbar .spacer{flex:1}
+#viewer iframe{flex:1;border:0;width:100%;background:#fff}
+.upl{position:relative;overflow:hidden;display:inline-flex;align-items:center;cursor:pointer}
+.upl input{position:absolute;inset:0;opacity:0;cursor:pointer}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <div class="wrap">
+    <span class="brand">GD&amp;T in 3D</span>
+    <span class="spacer"></span>
+    <div class="who">
+      <span id="whoName" class="small"></span>
+      <span id="whoRole"></span>
+    </div>
+  </div>
+</div>
+
+<main id="main"></main>
+<div id="toast" role="status" aria-live="polite"></div>
+<div id="viewer" hidden>
+  <div class="vbar"><b id="viewerTitle"></b><span class="spacer"></span><button class="btn sm" type="button" data-act="closeViewer">Close</button></div>
+  <iframe id="viewerFrame" title="Lesson" sandbox="allow-scripts allow-popups allow-forms"></iframe>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/13.3.0/firebase-app.js";
+import { getAuth, onAuthStateChanged, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink, signOut } from "https://www.gstatic.com/firebasejs/13.3.0/firebase-auth.js";
+import { getFirestore, doc, getDoc, getDocs, setDoc, addDoc, collection, query, where, writeBatch } from "https://www.gstatic.com/firebasejs/13.3.0/firebase-firestore.js";
+import { firebaseConfig } from "./firebase-config.js";
+const fbApp = initializeApp(firebaseConfig);
+const auth = getAuth(fbApp);
+const fdb = getFirestore(fbApp);
+(function(){
+"use strict";
+
+/* ===================== Roles & permissions (single source of truth) ===================== */
+const ROLES = {
+  owner:           {label:'Owner',                  staff:true},
+  admin:           {label:'Admin',                  staff:true},
+  creator:         {label:'Creator-Instructor',     staff:true},
+  instructor:      {label:'Instructor',             staff:true},
+  student_full:    {label:'Student Full Access',    staff:false},
+  student_partial: {label:'Student Partial Access', staff:false}
+};
+const STUDENT_ROLES = ['student_full','student_partial'];
+
+/* can(user, action, target) — every button in the UI asks this; Firestore rules will mirror it. */
+function can(u, action, x){
+  if (!u || u.status !== 'active') return false;
+  const r = u.role, top = (r === 'owner' || r === 'admin');
+  switch (action){
+    case 'viewGroup':         return top || r === 'creator' || (r === 'instructor' && x.instructors.includes(u.email));
+    case 'createGroup':       return top || r === 'creator';
+    case 'deleteGroup':       return top;
+    case 'manageMembers':     return top || r === 'creator';                 // invite / change role / remove students
+    case 'editFeatures':      return top || r === 'creator';                 // which lessons & tools Partial gets
+    case 'assignInstructors': return top || r === 'creator';
+    case 'viewRequests':      return top || r === 'creator';
+    case 'viewStaff':         return ROLES[r].staff;
+    case 'inviteStaffAs':     return r === 'owner' ? ['admin','creator','instructor'].includes(x)
+                                   : r === 'admin' ? ['creator','instructor'].includes(x) : false;
+    case 'manageStaff':       if (x.role === 'owner') return false;
+                              if (r === 'owner') return true;
+                              if (r === 'admin') return ['creator','instructor'].includes(x.role);
+                              return false;
+    case 'transferOwner':     return r === 'owner';
+    case 'editContent':       return top || r === 'creator';
+    case 'createProblems':    return top || r === 'creator';
+    case 'viewRoles':         return ROLES[r].staff;
+    case 'viewProgress':      return can(u, 'viewGroup', x);
+  }
+  return false;
+}
+/* Can this person open this lesson or tool? */
+function canOpen(u, item){
+  if (!u || u.status !== 'active') return false;
+  if (ROLES[u.role].staff) return item.status === 'published' || can(u, 'editContent');
+  if (item.status !== 'published') return false;
+  if (u.role === 'student_full') return true;
+  const g = groupOf(u);
+  return !!g && g.allowed.includes(item.id);
+}
+
+/* ===================== Practice problems ===================== */
+const TYPE_LABEL = {lesson:'3D lesson', tool:'Tool', problem:'Practice problem'};
+const SHAPES = {
+  stack:  {label:'1D stack chain', dims:[]},
+  prism:  {label:'Plate / block', dims:[['L','Length (X)'],['W','Width (Y)'],['T','Thickness (Z)']]},
+  shaft:  {label:'Turned shaft', dims:[]},
+  bracket:{label:'Sheet-metal bracket', dims:[['L','Length'],['W','Base depth'],['H','Flange height'],['t','Sheet thickness']]}
+};
+const FACES = {
+  prism:  {bottom:'Bottom face', top:'Top face', left:'Left face', right:'Right face', front:'Front face', back:'Back face'},
+  shaft:  {leftEnd:'Left end face', rightEnd:'Right end face'},
+  bracket:{baseBottom:'Base, bottom face', flangeBack:'Flange, back face', leftEdge:'Left edge', frontEdge:'Front edge'},
+  stack:  {}
+};
+const PLBL = {x:'X from left', y:'Y from front', depth:'Depth', cbDia:'C-bore Ø', cbDepth:'C-bore depth', len:'Length', w:'Width', l:'Length', z:'From left end', face:'Face', u:'Along length', v:'From front/base', dia:'Dia', height:'Height'};
+const FEAT = {
+  hole:     {label:'Through hole',      proc:'Machining',  shapes:['prism'],   fos:'int', cyl:true,  params:{x:1.25,y:1}, size:[.500,.010,0]},
+  blind:    {label:'Blind hole',        proc:'Machining',  shapes:['prism'],   fos:'int', cyl:true,  params:{x:.75,y:.5,depth:.3}, size:[.250,.005,0]},
+  cbore:    {label:'Counterbored hole', proc:'Machining',  shapes:['prism'],   fos:'int', cyl:true,  params:{x:2.25,y:1.5,cbDia:.44,cbDepth:.2}, size:[.257,.005,0]},
+  slot:     {label:'Through slot',      proc:'Machining',  shapes:['prism'],   fos:'int', cyl:false, params:{x:2.25,y:.6,len:.6}, size:[.250,.004,0], sizeName:'Width'},
+  pocket:   {label:'Pocket',            proc:'Machining',  shapes:['prism'],   fos:null,             params:{x:1.5,y:1,w:.6,l:1,depth:.15}},
+  dia:      {label:'Turned diameter',   proc:'Machining',  shapes:['shaft'],   fos:'ext', cyl:true,  params:{len:1}, size:[.500,0,.002]},
+  groove:   {label:'Groove',            proc:'Machining',  shapes:['shaft'],   fos:'int', cyl:false, params:{z:.5,depth:.04}, size:[.060,.003,0], sizeName:'Width'},
+  crosshole:{label:'Cross hole',        proc:'Machining',  shapes:['shaft'],   fos:'int', cyl:true,  params:{z:.5}, size:[.125,.003,0]},
+  bore:     {label:'Through bore (axial)', proc:'Machining', shapes:['shaft'],  fos:'int', cyl:true,  params:{}, size:[.250,.003,0]},
+  pierce:   {label:'Pierced hole',      proc:'Stamping',   shapes:['bracket'], fos:'int', cyl:true,  params:{face:'base',u:1,v:.75}, size:[.266,.005,0]},
+  pslot:    {label:'Pierced slot',      proc:'Stamping',   shapes:['bracket'], fos:'int', cyl:false, params:{face:'flange',u:1.5,v:.75,len:.5}, size:[.266,.005,0], sizeName:'Width'},
+  emboss:   {label:'Emboss / dimple',   proc:'Stamping',   shapes:['bracket'], fos:null,             params:{face:'base',u:2.5,v:.5,dia:.3,height:.06}},
+  boss:     {label:'Boss',              proc:'3D printed', shapes:['prism'],   fos:'ext', cyl:true,  params:{x:2.5,y:1.4,height:.3}, size:[.375,0,.008]},
+  rib:      {label:'Rib',               proc:'3D printed', shapes:['prism'],   fos:'ext', cyl:false, params:{x:1.5,y:.4,len:1.5,height:.25}, size:[.100,0,.008], sizeName:'Width'},
+  surface:  {label:'Surface (a face)',  proc:'Any',        shapes:['prism','shaft','bracket'], fos:null, params:{face:''}}
+};
+const CHARS = {
+  position:{label:'Position', cat:'location'},
+  flatness:{label:'Flatness', cat:'form'}, straightness:{label:'Straightness', cat:'form'},
+  circularity:{label:'Circularity', cat:'form'}, cylindricity:{label:'Cylindricity', cat:'form'},
+  parallelism:{label:'Parallelism', cat:'orient'}, perpendicularity:{label:'Perpendicularity', cat:'orient'}, angularity:{label:'Angularity', cat:'orient'},
+  profileSurface:{label:'Profile of a surface', cat:'profile'}, profileLine:{label:'Profile of a line', cat:'profile'},
+  circRunout:{label:'Circular runout', cat:'runout'}, totalRunout:{label:'Total runout', cat:'runout'},
+  concentricity:{label:'Concentricity (2009 only)', cat:'removed'}, symmetry:{label:'Symmetry (2009 only)', cat:'removed'}
+};
+const PTYPES = {stack:'Calculate a stack / gap', accept:'Accept or reject a part', errors:'Find GD&T errors', fcf:'Write the feature control frame'};
+const ASK = {
+  wcMin:['Worst-case minimum gap', r => r.mean - r.wc],
+  wcMax:['Worst-case maximum gap', r => r.mean + r.wc],
+  rssMin:['RSS minimum gap', r => r.mean - r.rss],
+  mrssMin:['Modified RSS (×1.5) minimum gap', r => r.mean - r.mrss],
+  mean:['Mean gap', r => r.mean]
+};
+const ORIENT = {v:'Vertical start line (stack runs left / right)', h:'Horizontal start line (stack runs up / down)'};
+function sideOpts(orient){ return orient === 'h' ? [['+','Above line (+)'],['-','Below line (−)']] : [['+','Right of line (+)'],['-','Left of line (−)']]; }
+function sideWord(orient, dir){ return orient === 'h' ? (dir === '-' ? 'below' : 'above') : (dir === '-' ? 'left' : 'right'); }
+const fmt = v => (v < -5e-6 ? '−' : '') + Math.abs(v).toFixed(4).replace(/^0(?=\.)/,'');
+const sgn = v => (v < -5e-6 ? '−' : '+') + Math.abs(v).toFixed(4).replace(/^0(?=\.)/,'');
+const clone = o => JSON.parse(JSON.stringify(o));
+
+/* ---- math (verified-reference §1 and §4) ---- */
+function evalStack(chain){
+  let mean = 0, wc = 0, ss = 0;
+  chain.forEach(c => { const U = +c.up || 0, Lo = +c.lo || 0, m = (+c.nom || 0) + (U + Lo)/2, t = (U - Lo)/2;
+    mean += (c.dir === '-' ? -1 : 1) * m; wc += Math.abs(t); ss += t*t; });
+  const rss = Math.sqrt(ss);
+  return {mean, wc, rss, mrss: Math.min(1.5*rss, wc)};
+}
+function limits(f){ const s = f.size; return {lo: s[0] - s[2], hi: s[0] + s[1]}; }
+function mmcOf(f){ const L = limits(f); return FEAT[f.kind].fos === 'int' ? L.lo : L.hi; }
+function lmcOf(f){ const L = limits(f); return FEAT[f.kind].fos === 'int' ? L.hi : L.lo; }
+function sizeText(f){ const d = FEAT[f.kind]; if (!f.size) return '—'; const s = f.size;
+  return (d.cyl ? 'Ø' : '') + fmt(s[0]) + (s[1] === s[2] ? ` ±${fmt(s[1])}` : ` +${fmt(s[1])}/−${fmt(s[2])}`); }
+function evalAccept(P){
+  const f = P.features.find(x => x.id === P.ans.feat); if (!f || !f.fcf || !f.fcf.char) return null;
+  const c = f.fcf, m = P.ans.meas || {}, d = FEAT[f.kind];
+  let sizeOK = true, bonus = 0;
+  if (d.fos && f.size){ const L = limits(f), a = +m.size; sizeOK = a >= L.lo - 1e-9 && a <= L.hi + 1e-9;
+    if (c.mod === 'MMC') bonus = Math.abs(a - mmcOf(f)); else if (c.mod === 'LMC') bonus = Math.abs(lmcOf(f) - a); }
+  const allowed = (+c.tol || 0) + (sizeOK ? bonus : 0);
+  const measured = c.char === 'position' ? (d.cyl ? 2*Math.hypot(+m.dx || 0, +m.dy || 0) : 2*Math.abs(+m.dx || 0)) : (+m.dev || 0);
+  return {f, sizeOK, bonus, allowed, measured, pass: sizeOK && measured <= allowed + 1e-9};
+}
+/* ---- rule checker, from the verified-reference control table (§2) ---- */
+function checkFCF(P, f){
+  const c = f.fcf; if (!c || !c.char) return [];
+  const e = [], d = FEAT[f.kind], ch = CHARS[c.char], cat = ch.cat, isFOS = !!d.fos;
+  const ds = (c.datums || []).filter(Boolean);
+  if (cat === 'removed') e.push('Concentricity and symmetry were removed in Y14.5-2018. Use position, runout or profile.');
+  if (cat === 'form' && ds.length) e.push('Form tolerances never reference datums.');
+  if ((cat === 'orient' || cat === 'runout' || cat === 'location') && !ds.length) e.push(`${ch.label} needs at least one datum reference.`);
+  if (c.mod === 'MMC' || c.mod === 'LMC'){
+    if (cat === 'profile' || cat === 'runout' || c.char === 'circularity' || c.char === 'cylindricity' || cat === 'removed') e.push(`${ch.label} can't take Ⓜ or Ⓛ on its tolerance.`);
+    else if (!isFOS) e.push('Ⓜ / Ⓛ only applies to a feature of size. This feature has no size.');
+  }
+  if (c.char === 'position' && !isFOS) e.push('Position applies to a feature of size (hole, slot, pin, boss), not a plain surface.');
+  if (!(+c.tol > 0) && !(+c.tol === 0 && (c.mod === 'MMC' || c.mod === 'LMC'))) e.push('Tolerance must be greater than zero (zero is only valid at MMC or LMC).');
+  if (c.dia && !d.cyl) e.push('Ø belongs in the frame only for a cylindrical zone (a round feature).');
+  const seen = new Set();
+  ds.forEach(L => { if (seen.has(L)) e.push(`Datum ${L} is referenced twice.`); seen.add(L);
+    const t = P.datums[L]; if (!t) e.push(`Datum ${L} isn't defined on the part.`); else if (t === 'feat:' + f.id) e.push(`A feature can't reference itself as datum ${L}.`); });
+  return e;
+}
+function errorSet(P){ return P.features.filter(f => f.fcf && f.fcf.char && (checkFCF(P,f).length || f.fcf.planted)).map(f => f.id); }
+
+/* ---- templates & sample problems ---- */
+function nextFid(P){ return 'F' + (P.features.reduce((m,f) => Math.max(m, +f.id.slice(1) || 0), 0) + 1); }
+function newFeature(P, kind){ const d = FEAT[kind]; return {id: nextFid(P), kind, params: clone(d.params), size: d.size ? d.size.slice() : null, fcf: {char:'', dia:false, tol:.010, mod:'RFS', datums:['','',''], planted:false, note:''}}; }
+function fcf(char, tol, mod, datums, dia){ return {char, dia: !!dia, tol, mod: mod || 'RFS', datums: (datums || []).concat(['','','']).slice(0,3), planted:false, note:''}; }
+function template(shape){
+  const P = {shape, view:'3d', dims:{}, features:[], datums:{A:'',B:'',C:''}, ptype:'accept', prompt:'', ans:{}};
+  if (shape === 'stack'){
+    P.ptype = 'stack';
+    P.dims.orient = 'v';
+    P.dims.chain = [
+      {name:'Housing depth', nom:.950, up:.005, lo:0, dir:'+'},
+      {name:'Spacer', nom:.500, up:.002, lo:-.002, dir:'-'},
+      {name:'Bearing width', nom:.375, up:0, lo:-.003, dir:'-'},
+      {name:'Retaining ring', nom:.0625, up:.002, lo:-.002, dir:'-'}];
+    P.ans = {ask:'wcMin', tol:.0005};
+    P.prompt = 'Find the worst-case minimum gap between the retaining ring and the end of the housing. Answer in inches to 4 places.';
+  }
+  if (shape === 'prism'){
+    P.dims = {L:3, W:2, T:.5};
+    const h = newFeature(P,'hole'); h.fcf = fcf('position', .010, 'MMC', ['A','B','C'], true); P.features.push(h);
+    P.datums = {A:'face:bottom', B:'face:left', C:'face:front'};
+    P.ans = {feat:'F1', meas:{size:.506, dx:.004, dy:-.003, dev:0}};
+    P.prompt = 'Inspection measured hole F1 as shown. Accept or reject the part, and give the measured position.';
+  }
+  if (shape === 'shaft'){
+    [[1,.500,.002],[.75,.750,.003],[1,.500,.002]].forEach(([len,d,tl]) => { const f = newFeature(P,'dia'); f.params.len = len; f.size = [d,0,tl]; P.features.push(f); });
+    P.datums = {A:'feat:F1', B:'face:leftEnd', C:''};
+    P.ptype = 'errors';
+    P.prompt = 'Some of these feature control frames break Y14.5-2018 rules. Check every one that is wrong.';
+  }
+  if (shape === 'bracket'){
+    P.dims = {L:3, W:1.5, H:1.25, t:.06};
+    const a = newFeature(P,'pierce'); a.fcf = fcf('position', .014, 'MMC', ['A','B','C'], true); P.features.push(a);
+    P.datums = {A:'face:baseBottom', B:'face:flangeBack', C:'face:leftEdge'};
+    P.ptype = 'fcf'; P.ans = {feat:'F1'};
+    P.prompt = 'Write the feature control frame for hole F1. It must locate the hole for a bolt that passes through the base, measured from datums A, B and C.';
+  }
+  return P;
+}
+function sampleProblems(){
+  const p1 = template('stack');
+  const p2 = template('prism');
+  const s2 = newFeature(p2,'surface'); s2.params.face = 'top'; s2.fcf = fcf('flatness', .002); p2.features.push(s2);
+  const b2 = newFeature(p2,'blind'); b2.fcf = fcf('position', .010, 'RFS', ['A','B','C'], true); p2.features.push(b2);
+  const p3 = template('shaft');
+  p3.features[1].fcf = fcf('circRunout', .002, 'RFS', ['A']);
+  p3.features[2].fcf = fcf('concentricity', .002, 'RFS', ['A'], true);
+  const g = newFeature(p3,'groove'); g.params.z = 2.2; g.fcf = fcf('position', .005, 'MMC', ['A','B']); p3.features.push(g);
+  const r = newFeature(p3,'surface'); r.params.face = 'rightEnd'; r.fcf = fcf('flatness', .001, 'RFS', ['A']); p3.features.push(r);
+  const x = newFeature(p3,'crosshole'); x.params.z = .5; x.fcf = fcf('position', .005, 'RFS', [], true); p3.features.push(x);
+  const l = newFeature(p3,'surface'); l.params.face = 'leftEnd'; l.fcf = fcf('perpendicularity', .002, 'MMC', ['A']); p3.features.push(l);
+  const p4 = template('bracket');
+  const a2 = newFeature(p4,'pierce'); a2.params.u = 2; a2.fcf = fcf('position', .014, 'MMC', ['A','B','C'], true); p4.features.push(a2);
+  const sl = newFeature(p4,'pslot'); sl.fcf = fcf('position', .014, 'MMC', ['A','B','C']); p4.features.push(sl);
+  const em = newFeature(p4,'emboss'); p4.features.push(em);
+  return [
+    {id:'p01', type:'problem', title:'Bearing stack: minimum gap', desc:'Four-part 1D stack with unequal tolerances. Worst case.', status:'published', problem:p1},
+    {id:'p02', type:'problem', title:'Accept or reject: hole at MMC', desc:'Measured size and location against position with bonus.', status:'published', problem:p2},
+    {id:'p03', type:'problem', title:'Find the errors: turned shaft', desc:'Six callouts on a Swiss-style shaft. Which ones break the rules?', status:'published', problem:p3},
+    {id:'p04', type:'problem', title:'Write the FCF: stamped bracket hole', desc:'Build the position callout for a pierced clearance hole.', status:'published', problem:p4}
+  ];
+}
+
+/* ---- FCF drawing ---- */
+function symSVG(ch, cx, cy, s, col){
+  const L = (x1,y1,x2,y2) => `<line x1="${cx+x1*s}" y1="${cy+y1*s}" x2="${cx+x2*s}" y2="${cy+y2*s}" stroke="${col}" stroke-width="1.3"/>`;
+  const C = r => `<circle cx="${cx}" cy="${cy}" r="${r*s}" fill="none" stroke="${col}" stroke-width="1.3"/>`;
+  switch (ch){
+    case 'position': return C(.24) + L(-.4,0,.4,0) + L(0,-.4,0,.4);
+    case 'flatness': return `<polygon points="${cx-.36*s},${cy+.14*s} ${cx-.16*s},${cy-.14*s} ${cx+.36*s},${cy-.14*s} ${cx+.16*s},${cy+.14*s}" fill="none" stroke="${col}" stroke-width="1.3"/>`;
+    case 'straightness': return L(-.36,0,.36,0);
+    case 'circularity': return C(.28);
+    case 'cylindricity': return C(.22) + L(-.3,.32,-.08,-.32) + L(.08,.32,.3,-.32);
+    case 'profileSurface': return `<path d="M${cx-.3*s},${cy+.14*s} A${.3*s},${.3*s} 0 0 1 ${cx+.3*s},${cy+.14*s} Z" fill="none" stroke="${col}" stroke-width="1.3"/>`;
+    case 'profileLine': return `<path d="M${cx-.3*s},${cy+.14*s} A${.3*s},${.3*s} 0 0 1 ${cx+.3*s},${cy+.14*s}" fill="none" stroke="${col}" stroke-width="1.3"/>`;
+    case 'parallelism': return L(-.28,.3,-.04,-.3) + L(.04,.3,.28,-.3);
+    case 'perpendicularity': return L(0,-.32,0,.3) + L(-.32,.3,.32,.3);
+    case 'angularity': return L(-.3,.3,.32,.3) + L(-.3,.3,.24,-.28);
+    case 'circRunout': return L(-.2,.3,.2,-.3) + `<polygon points="${cx+.2*s},${cy-.3*s} ${cx+.02*s},${cy-.22*s} ${cx+.16*s},${cy-.1*s}" fill="${col}"/>`;
+    case 'totalRunout': return L(-.3,.3,-.06,-.28) + L(.06,.3,.3,-.28) + L(-.3,.3,.06,.3) + `<polygon points="${cx-.06*s},${cy-.28*s} ${cx-.2*s},${cy-.18*s} ${cx-.08*s},${cy-.1*s}" fill="${col}"/><polygon points="${cx+.3*s},${cy-.28*s} ${cx+.16*s},${cy-.18*s} ${cx+.28*s},${cy-.1*s}" fill="${col}"/>`;
+    case 'concentricity': return C(.14) + C(.3);
+    case 'symmetry': return L(-.34,0,.34,0) + L(-.2,-.2,.2,-.2) + L(-.2,.2,.2,.2);
+  }
+  return '';
+}
+function fcfSVG(c, col){
+  if (!c || !c.char) return '<span class="small muted">No callout</span>';
+  const h = 26, fs = 15, ds = (c.datums || []).filter(Boolean);
+  const tolTxt = (c.dia ? 'Ø' : '') + fmt(+c.tol || 0);
+  const modW = (c.mod === 'MMC' || c.mod === 'LMC') ? 20 : 0;
+  const w0 = 28, w1 = tolTxt.length*9.2 + 14 + modW, wd = 24;
+  const W = w0 + w1 + ds.length*wd + 2;
+  let s = `<svg class="fcfsvg" viewBox="0 0 ${W} ${h+2}" width="${W}" height="${h+2}" role="img" aria-label="${esc(CHARS[c.char].label)} ${esc(tolTxt)} ${c.mod!=='RFS'?c.mod:''} ${ds.join(' ')}">`;
+  let x = 1;
+  const box = w => { s += `<rect x="${x}" y="1" width="${w}" height="${h}" fill="none" stroke="${col}" stroke-width="1.2"/>`; };
+  box(w0); s += symSVG(c.char, x + w0/2, 1 + h/2, h*.78, col); x += w0;
+  box(w1); s += `<text x="${x+7}" y="${1+h/2+5}" font-family="IBM Plex Mono, monospace" font-size="${fs}" fill="${col}">${esc(tolTxt)}</text>`;
+  if (modW){ const mx = x + w1 - 13; s += `<circle cx="${mx}" cy="${1+h/2}" r="7.5" fill="none" stroke="${col}" stroke-width="1.1"/><text x="${mx}" y="${1+h/2+4}" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-size="10.5" font-weight="600" fill="${col}">${c.mod==='MMC'?'M':'L'}</text>`; }
+  x += w1;
+  ds.forEach(L => { box(wd); s += `<text x="${x+wd/2}" y="${1+h/2+5}" text-anchor="middle" font-family="IBM Plex Sans, sans-serif" font-weight="600" font-size="${fs}" fill="${col}">${esc(L)}</text>`; x += wd; });
+  return s + '</svg>';
+}
+function inkColor(){ return getComputedStyle(document.documentElement).getPropertyValue('--ink').trim() || '#232a30'; }
+
+/* ---- 3D viewer (shared, re-mounted after each render) ---- */
+const VIEW = {el:null};
+function tokenColors(){ const cs = getComputedStyle(document.documentElement), g = n => cs.getPropertyValue(n).trim(); return {bg:g('--bg'), ink:g('--ink'), accent:g('--accent'), muted:g('--muted'), surface:g('--surface')}; }
+function ensureViewer(){
+  if (VIEW.el || typeof THREE === 'undefined') return;
+  const el = document.createElement('div'); el.className = 'pviewer';
+  const r = new THREE.WebGLRenderer({antialias:true}); r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  el.appendChild(r.domElement);
+  const scene = new THREE.Scene();
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x5a6672, 0.85));
+  const sun = new THREE.DirectionalLight(0xffffff, 0.7); sun.position.set(4,7,5); scene.add(sun);
+  const fl = new THREE.DirectionalLight(0xffffff, 0.25); fl.position.set(-4,2,-3); scene.add(fl);
+  const persp = new THREE.PerspectiveCamera(32, 1, 0.01, 200);
+  const ortho = new THREE.OrthographicCamera(-1,1,1,-1,0.01,200);
+  const cp = new THREE.OrbitControls(persp, r.domElement);
+  const co = new THREE.OrbitControls(ortho, r.domElement); co.enableRotate = false; co.enabled = false;
+  Object.assign(VIEW, {el, r, scene, persp, ortho, cp, co, group:null, key:null, mode:'3d', box:null});
+  const draw = () => VIEW.r.render(VIEW.scene, VIEW.mode === '2d' ? VIEW.ortho : VIEW.persp);
+  VIEW.draw = draw; cp.addEventListener('change', draw); co.addEventListener('change', draw);
+  if ('ResizeObserver' in window) new ResizeObserver(() => resizeViewer()).observe(el);
+}
+function resizeViewer(){
+  if (!VIEW.el) return; const w = VIEW.el.clientWidth || 300, h = VIEW.el.clientHeight || 300;
+  VIEW.r.setSize(w, h, false); VIEW.persp.aspect = w/h; VIEW.persp.updateProjectionMatrix();
+  if (VIEW.box){ const sz = VIEW.box.getSize(new THREE.Vector3()), half = Math.max(sz.x, (VIEW.front ? sz.y : sz.z)*w/h)*0.62 + .25;
+    VIEW.ortho.left = -half; VIEW.ortho.right = half; VIEW.ortho.top = half*h/w; VIEW.ortho.bottom = -half*h/w; VIEW.ortho.updateProjectionMatrix(); }
+  VIEW.draw();
+}
+function frameView(force){
+  const c = VIEW.box.getCenter(new THREE.Vector3()), s = VIEW.box.getSize(new THREE.Vector3()).length();
+  VIEW.cp.target.copy(c); VIEW.persp.position.set(c.x + s*.55, c.y + s*.55, c.z + s*.85); VIEW.cp.update();
+  VIEW.co.target.copy(c); if (VIEW.front) VIEW.ortho.position.set(c.x, c.y, c.z + s*2); else VIEW.ortho.position.set(c.x, c.y + s*2, c.z + 0.0001); VIEW.ortho.up.set(0,1,0); VIEW.ortho.zoom = 1; VIEW.ortho.updateProjectionMatrix(); VIEW.co.update();
+}
+function mountViewer(P, opts){
+  const slot = document.getElementById('viewerSlot'); if (!slot) return;
+  if (typeof THREE === 'undefined'){ slot.innerHTML = '<div class="empty">3D preview needs the three.js library, which did not load.</div>'; return; }
+  ensureViewer(); slot.appendChild(VIEW.el);
+  const t = tokenColors(); VIEW.r.setClearColor(new THREE.Color(t.bg), 1);
+  if (VIEW.group){ VIEW.scene.remove(VIEW.group); VIEW.group.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
+  VIEW.group = buildModel(P, t, opts || {}); VIEW.scene.add(VIEW.group);
+  VIEW.box = new THREE.Box3().setFromObject(VIEW.group);
+  VIEW.mode = (P.shape === 'stack' || (P.shape === 'prism' && P.view === '2d')) ? '2d' : '3d';
+  VIEW.front = P.shape === 'stack';
+  VIEW.cp.enabled = VIEW.mode === '3d'; VIEW.co.enabled = VIEW.mode === '2d';
+  const key = (opts.ctx || '') + '|' + P.shape + '|' + VIEW.mode;
+  if (key !== VIEW.key || opts.reframe){ VIEW.key = key; frameView(); }
+  resizeViewer();
+}
+function textSprite(txt, o){
+  o = o || {}; const c = document.createElement('canvas'), x = c.getContext('2d'), fs = 44;
+  x.font = `500 ${fs}px "IBM Plex Sans", Arial, sans-serif`; const w = Math.ceil(x.measureText(txt).width) + 28;
+  c.width = w; c.height = 64; x.font = `500 ${fs}px "IBM Plex Sans", Arial, sans-serif`;
+  x.fillStyle = o.bg || '#ffffff'; x.strokeStyle = o.stroke || '#41505c'; x.lineWidth = 4;
+  if (o.box !== false){ x.fillRect(2,2,w-4,60); x.strokeRect(2,2,w-4,60); }
+  x.fillStyle = o.color || '#2f3a43'; x.textBaseline = 'middle'; x.fillText(txt, 14, 34);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({map:new THREE.CanvasTexture(c), depthTest:false, transparent:true}));
+  const sc = o.scale || .16; sp.scale.set(sc*w/64, sc, 1); sp.renderOrder = 20; return sp;
+}
+function stadium(path, x, y, len, r){
+  const hs = Math.max(0, len/2 - r);
+  path.moveTo(x-hs, y-r); path.lineTo(x+hs, y-r); path.absarc(x+hs, y, r, -Math.PI/2, Math.PI/2, false);
+  path.lineTo(x-hs, y+r); path.absarc(x-hs, y, r, Math.PI/2, Math.PI*1.5, false);
+}
+function buildModel(P, t, opts){
+  const g = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({color:'#a9b1b7', metalness:.3, roughness:.55, side:THREE.DoubleSide});
+  const mat2 = new THREE.MeshStandardMaterial({color:'#c3c9cc', metalness:.2, roughness:.6});
+  const dark = new THREE.MeshStandardMaterial({color:'#3b4349', roughness:.8});
+  const edgeM = new THREE.LineBasicMaterial({color:t.ink, transparent:true, opacity:.45});
+  const addMesh = (geo, m, pos) => { const me = new THREE.Mesh(geo, m); if (pos) me.position.set(...pos); g.add(me);
+    if (m !== dark) { const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo, 28), edgeM); e.position.copy(me.position); e.rotation.copy(me.rotation); g.add(e); } return me; };
+  const anchors = {};   // feature id / face -> [pos, normal]
+  const D = P.dims || {};
+  if (P.shape === 'prism'){
+    const {L=3, W=2, T=.5} = D;
+    const sh = new THREE.Shape(); sh.moveTo(0,0); sh.lineTo(L,0); sh.lineTo(L,W); sh.lineTo(0,W); sh.lineTo(0,0);
+    P.features.forEach(f => { const p = f.params, r = f.size ? f.size[0]/2 : 0;
+      if (f.kind === 'hole' || f.kind === 'cbore'){ const h = new THREE.Path(); h.absarc(+p.x, +p.y, r, 0, Math.PI*2, true); sh.holes.push(h); }
+      if (f.kind === 'slot'){ const h = new THREE.Path(); stadium(h, +p.x, +p.y, +p.len, r); sh.holes.push(h); } });
+    const geo = new THREE.ExtrudeGeometry(sh, {depth:T, bevelEnabled:false, curveSegments:48}); geo.rotateX(-Math.PI/2);
+    addMesh(geo, mat);
+    P.features.forEach(f => { const p = f.params, r = f.size ? f.size[0]/2 : 0, x = +p.x, z = -(+p.y);
+      if (f.kind === 'blind') addMesh(new THREE.CylinderGeometry(r, r, +p.depth, 40), dark, [x, T - p.depth/2 + .003, z]);
+      if (f.kind === 'cbore') addMesh(new THREE.CylinderGeometry(p.cbDia/2, p.cbDia/2, +p.cbDepth, 40), dark, [x, T - p.cbDepth/2 + .003, z]);
+      if (f.kind === 'pocket') addMesh(new THREE.BoxGeometry(+p.l, +p.depth, +p.w), dark, [x, T - p.depth/2 + .003, z]);
+      if (f.kind === 'boss') addMesh(new THREE.CylinderGeometry(r, r, +p.height, 40), mat, [x, T + p.height/2, z]);
+      if (f.kind === 'rib') addMesh(new THREE.BoxGeometry(+p.len, +p.height, f.size[0]), mat, [x, T + p.height/2, z]);
+      const top = (f.kind === 'boss' || f.kind === 'rib') ? T + (+p.height) : T;
+      if (f.kind !== 'surface') anchors[f.id] = [[x, top, z], [0,1,0]];
+    });
+    Object.assign(anchors, {'face:bottom':[[L*.5,0,-W*.5],[0,-1,0]], 'face:top':[[L*.5,T,-W*.5],[0,1,0]], 'face:left':[[0,T/2,-W*.5],[-1,0,0]],
+      'face:right':[[L,T/2,-W*.5],[1,0,0]], 'face:front':[[L*.5,T/2,0],[0,0,1]], 'face:back':[[L*.5,T/2,-W],[0,0,-1]]});
+  }
+  if (P.shape === 'shaft'){
+    const secs = P.features.filter(f => f.kind === 'dia'); let z = 0;
+    const S = secs.map(f => { const s = {z0:z, z1:z + Math.max(.05, +f.params.len), r:f.size[0]/2, f}; z = s.z1; return s; });
+    const total = z;
+    if (S.length){
+      const grooves = P.features.filter(f => f.kind === 'groove').map(f => ({a:+f.params.z, b:+f.params.z + f.size[0], d:+f.params.depth, f}));
+      const bp = new Set([0, total]); S.forEach(s => { bp.add(s.z0); bp.add(s.z1); });
+      grooves.forEach(q => { bp.add(Math.min(total, Math.max(0, q.a))); bp.add(Math.min(total, Math.max(0, q.b))); });
+      const arr = [...bp].sort((a,b) => a-b);
+      const rAt = zm => { const s = S.find(s => zm >= s.z0 && zm <= s.z1) || S[S.length-1]; let r = s.r; grooves.forEach(q => { if (zm > q.a && zm < q.b) r = Math.max(.01, r - q.d); }); return r; };
+      const boreF = P.features.find(f => f.kind === 'bore'), rIn = boreF ? Math.min(boreF.size[0]/2, Math.min(...S.map(s => s.r)) - .01) : 0;
+      const pts = [new THREE.Vector2(rIn, 0)];
+      for (let i = 0; i < arr.length-1; i++){ const a = arr[i], b = arr[i+1]; if (b - a < 1e-6) continue; const r = rAt((a+b)/2); pts.push(new THREE.Vector2(r, a), new THREE.Vector2(r, b)); }
+      pts.push(new THREE.Vector2(rIn, total)); if (rIn > 0) pts.push(new THREE.Vector2(rIn, 0));
+      if (boreF) anchors[boreF.id] = [[0, 0, 0], [-1, .4, 0]];
+      const geo = new THREE.LatheGeometry(pts, 72); geo.rotateZ(-Math.PI/2); addMesh(geo, mat);
+      S.forEach(s => anchors[s.f.id] = [[(s.z0+s.z1)/2, s.r, 0], [0,1,0]]);
+      grooves.forEach(q => anchors[q.f.id] = [[(q.a+q.b)/2, rAt((q.a+q.b)/2), 0], [0,1,-.4]]);
+      const rmax = Math.max(...S.map(s => s.r));
+      P.features.filter(f => f.kind === 'crosshole').forEach(f => { const zz = +f.params.z, rr = f.size[0]/2;
+        const c = new THREE.CylinderGeometry(rr, rr, 2*rAt(zz) + .01, 32); c.rotateX(Math.PI/2); addMesh(c, dark, [zz, 0, 0]);
+        anchors[f.id] = [[zz, 0, rAt(zz)], [0,.3,1]]; });
+      anchors['face:leftEnd'] = [[0,0,0],[-1,0,0]]; anchors['face:rightEnd'] = [[total,0,0],[1,0,0]];
+    }
+  }
+  if (P.shape === 'bracket'){
+    const {L=3, W=1.5, H=1.25, t:th=.06} = D;
+    const base = new THREE.Shape(); base.moveTo(0,0); base.lineTo(L,0); base.lineTo(L,W); base.lineTo(0,W); base.lineTo(0,0);
+    const fl = new THREE.Shape(); fl.moveTo(0,0); fl.lineTo(L,0); fl.lineTo(L,H); fl.lineTo(0,H); fl.lineTo(0,0);
+    P.features.forEach(f => { const p = f.params, r = f.size ? f.size[0]/2 : 0; const tgt = p.face === 'flange' ? fl : base;
+      if (f.kind === 'pierce'){ const h = new THREE.Path(); h.absarc(+p.u, +p.v, r, 0, Math.PI*2, true); tgt.holes.push(h); }
+      if (f.kind === 'pslot'){ const h = new THREE.Path(); stadium(h, +p.u, +p.v, +p.len, r); tgt.holes.push(h); } });
+    const gb = new THREE.ExtrudeGeometry(base, {depth:th, bevelEnabled:false, curveSegments:40}); gb.rotateX(-Math.PI/2); addMesh(gb, mat);
+    const gf = new THREE.ExtrudeGeometry(fl, {depth:th, bevelEnabled:false, curveSegments:40}); gf.translate(0, 0, -W); addMesh(gf, mat);
+    P.features.forEach(f => { const p = f.params, onF = p.face === 'flange';
+      if (f.kind === 'emboss'){ const sg = new THREE.SphereGeometry(p.dia/2, 28, 12, 0, Math.PI*2, 0, Math.PI/2); sg.scale(1, (+p.height)/(p.dia/2), 1);
+        if (onF){ sg.rotateX(Math.PI/2); addMesh(sg, mat, [+p.u, +p.v, -W + th]); } else addMesh(sg, mat, [+p.u, th, -(+p.v)]); }
+      if (f.kind !== 'surface') anchors[f.id] = onF ? [[+p.u, +p.v, -W + th], [0,0,1]] : [[+p.u, th, -(+p.v)], [0,1,0]];
+    });
+    Object.assign(anchors, {'face:baseBottom':[[L*.5,0,-W*.5],[0,-1,0]], 'face:flangeBack':[[L*.5,H*.5,-W],[0,0,-1]], 'face:leftEdge':[[0,th/2,-W*.5],[-1,0,0]], 'face:frontEdge':[[L*.5,th/2,0],[0,0,1]]});
+  }
+  if (P.shape === 'stack'){
+    /* Start-line diagram. Items sit on one side of the start line or the other, laid end to end from the line.
+       Vertical line: + items run right, − items run left. Horizontal line: + items run up, − items run down. */
+    const chain = D.chain || [], horiz = (D.orient || 'v') !== 'h';   // horiz = stack runs left/right
+    const th = .18, d = .12;
+    const plus = chain.filter(c => c.dir !== '-'), minus = chain.filter(c => c.dir === '-');
+    const lenOf = c => Math.max(.04, +c.nom || 0);
+    const sumP = plus.reduce((a,c) => a + lenOf(c), 0), sumM = minus.reduce((a,c) => a + lenOf(c), 0);
+    const plusM = new THREE.MeshStandardMaterial({color:'#b9c4cc', roughness:.6}), minusM = new THREE.MeshStandardMaterial({color:'#8d99a3', roughness:.6});
+    const pos = (along, across) => horiz ? [along, across, 0] : [across, along, 0];
+    const blockGeo = len => horiz ? new THREE.BoxGeometry(len, th, d) : new THREE.BoxGeometry(th, len, d);
+    // start line
+    const lineLen = th*2 + .5;
+    addMesh(horiz ? new THREE.BoxGeometry(.015, lineLen, d) : new THREE.BoxGeometry(lineLen, .015, d), dark, [0,0,0]);
+    const org = textSprite('Start line', {scale:.085}); org.position.set(...(horiz ? [0, lineLen/2 + .12, 0] : [-lineLen/2 - .3, 0, 0])); g.add(org);
+    // items, end to end from the line, on their own side
+    const lay = (items, sign, m) => { let x = 0; items.forEach(c => { const idx = chain.indexOf(c) + 1, len = lenOf(c);
+      addMesh(blockGeo(len), m, pos(sign*(x + len/2), 0));
+      const n = textSprite(String(idx), {scale:.085}); n.position.set(...pos(sign*(x + len/2), 0)); n.position.z = d/2 + .02; g.add(n); x += len; }); return x; };
+    lay(plus, +1, plusM); lay(minus, -1, minusM);
+    // end ticks and sums
+    const tick = (along) => addMesh(horiz ? new THREE.BoxGeometry(.012, th + .1, d) : new THREE.BoxGeometry(th + .1, .012, d), dark, pos(along, 0));
+    if (sumP > 0) tick(sumP); if (sumM > 0) tick(-sumM);
+    const lab = (txt, along, side) => { const sp = textSprite(txt, {box:false, color:t.ink, scale:.075}); sp.position.set(...pos(along, side*(th/2 + .1))); g.add(sp); };
+    if (plus.length) lab(`Σ(+) = ${fmt(plus.reduce((a,c) => a + (+c.nom||0), 0))}`, sumP/2, +1);
+    if (minus.length) lab(`Σ(−) = ${fmt(minus.reduce((a,c) => a + (+c.nom||0), 0))}`, -sumM/2, +1);
+    const gap = plus.reduce((a,c) => a + (+c.nom||0), 0) - minus.reduce((a,c) => a + (+c.nom||0), 0);
+    const gl = textSprite(`${gap >= 0 ? 'Gap' : 'Interference'} = Σ(+) − Σ(−) = ${fmt(gap)}`, {scale:.09}); gl.position.set(...pos((sumP - sumM)/2, -(th/2 + .22))); g.add(gl);
+    const hint = textSprite(horiz ? '← left of line is −   |   right of line is + →' : '↑ above line is +   |   below line is − ↓', {box:false, color:t.muted, scale:.07});
+    hint.position.set(...pos((sumP - sumM)/2, -(th/2 + .4))); g.add(hint);
+  }
+  // tags: feature IDs and datum letters
+  const box = new THREE.Box3().setFromObject(g), span = box.getSize(new THREE.Vector3()).length() || 1;
+  if (P.shape !== 'stack'){
+    P.features.forEach(f => {
+      let a = anchors[f.id]; if (f.kind === 'surface' && f.params.face) a = anchors['face:' + f.params.face];
+      if (!a) return; const n = new THREE.Vector3(...a[1]).normalize().multiplyScalar(span*.05);
+      const sp = textSprite(f.id, {box:false, color:t.ink, scale:.085}); sp.position.set(a[0][0] + n.x, a[0][1] + n.y, a[0][2] + n.z); g.add(sp); });
+    Object.entries(P.datums || {}).forEach(([Lt, tgt]) => {
+      if (!tgt) return; let a = anchors[tgt];
+      if (!a && tgt.startsWith('feat:')){ const f = P.features.find(x => 'feat:' + x.id === tgt); if (f && f.kind === 'surface') a = anchors['face:' + f.params.face]; }
+      if (!a) return; const n = new THREE.Vector3(...a[1]).normalize().multiplyScalar(span*.11);
+      const sp = textSprite(Lt, {scale:.12}); sp.position.set(a[0][0] + n.x, a[0][1] + n.y, a[0][2] + n.z); g.add(sp); });
+  }
+  return g;
+}
+
+/* ---- shared drawing-data table ---- */
+function datumOf(P, f){ return Object.entries(P.datums || {}).filter(([L,t]) => t === 'feat:' + f.id || (f.kind === 'surface' && t === 'face:' + f.params.face)).map(([L]) => L); }
+function targetLabel(P, tgt){ if (!tgt) return '—'; if (tgt.startsWith('face:')) return FACES[P.shape][tgt.slice(5)] || tgt; const f = P.features.find(x => 'feat:' + x.id === tgt); return f ? `${f.id} · ${FEAT[f.kind].label}` : tgt; }
+function featWhere(P, f){
+  const p = f.params, n = v => fmt(+v);
+  if (f.kind === 'surface') return FACES[P.shape][p.face] || 'face not set';
+  if (P.shape === 'prism') return `X ${n(p.x)}, Y ${n(p.y)}` + (p.depth ? `, depth ${n(p.depth)}` : '') + (p.height ? `, height ${n(p.height)}` : '');
+  if (P.shape === 'shaft') return f.kind === 'dia' ? `length ${n(p.len)}` : f.kind === 'bore' ? 'full length, on the axis' : `${n(p.z)} from left end`;
+  if (P.shape === 'bracket') return `${p.face === 'flange' ? 'Flange' : 'Base'}, ${n(p.u)} along, ${n(p.v)} ${p.face === 'flange' ? 'up' : 'from front'}`;
+  return '';
+}
+function drawingTable(P, hideId){
+  const col = inkColor();
+  if (P.shape === 'stack'){
+    const or = P.dims.orient || 'v';
+    return `<div class="tblwrap"><table class="tbl"><thead><tr><th>#</th><th>Item</th><th>Side of start line</th><th class="r">Nominal</th><th class="r">Upper</th><th class="r">Lower</th></tr></thead><tbody>${
+      P.dims.chain.map((c,i) => `<tr><td class="mono small">${i+1}</td><td>${esc(c.name)}</td><td class="small">${sideWord(or, c.dir)} <span class="mono">(${c.dir === '-' ? '−' : '+'})</span></td><td class="r mono">${fmt(+c.nom)}</td><td class="r mono">${sgn(+c.up)}</td><td class="r mono">${sgn(+c.lo)}</td></tr>`).join('')}</tbody></table></div>
+      <p class="small muted" style="margin:6px 0 0">${ORIENT[or]}. ${or === 'h' ? 'Above' : 'Right of'} the line is +, ${or === 'h' ? 'below' : 'left of'} the line is −. Gap = Σ(+) − Σ(−).</p>`;
+  }
+  const ds = Object.entries(P.datums || {}).filter(([L,t]) => t).map(([L,t]) => `<b>${L}</b> = ${esc(targetLabel(P,t))}`).join(' · ');
+  return `<div class="tblwrap"><table class="tbl"><thead><tr><th>ID</th><th>Feature</th><th>Where</th><th>Size</th><th>Callout</th></tr></thead><tbody>${
+    P.features.map(f => { const dl = datumOf(P,f); return `<tr><td class="mono small">${f.id}${dl.length ? ` <span class="dtag">${dl.join(' ')}</span>` : ''}</td><td>${FEAT[f.kind].label}<br><span class="small muted">${FEAT[f.kind].proc}</span></td><td class="small">${esc(featWhere(P,f))}</td><td class="mono small">${f.size ? sizeText(f) : '—'}</td><td>${f.id === hideId ? '<span class="small muted">You write this one</span>' : fcfSVG(f.fcf, col)}</td></tr>`; }).join('')}</tbody></table></div>
+    <p class="small muted" style="margin:6px 0 0">Datums: ${ds || 'none defined'}. Generic part.</p>`;
+}
+
+/* ---- Problem creator (Owner, Admin, Creator-Instructor) ---- */
+function getPath(o, path){ return path.split('.').reduce((a,k) => a == null ? a : a[k], o); }
+function setPath(o, path, v){ const ks = path.split('.'); const last = ks.pop(); const tgt = ks.reduce((a,k) => a[k], o); tgt[last] = v; }
+function bid(path){ return 'b-' + path.replace(/[^a-zA-Z0-9]/g, '-'); }
+function inNum(path, val, label, w){ return `<label class="fld">${label}<input type="text" inputmode="decimal" id="${bid(path)}" data-bind="${path}" data-kind="num" value="${val == null ? '' : +val}" style="width:${w||84}px"></label>`; }
+function inSel(path, val, opts, label){ return `<label class="fld">${label}<select id="${bid(path)}" data-bind="${path}">${opts.map(([v,t]) => `<option value="${esc(v)}" ${String(v)===String(val)?'selected':''}>${esc(t)}</option>`).join('')}</select></label>`; }
+
+function viewCreator(u){
+  const pc = UI.pc;
+  if (!pc.draft){
+    const list = DB.catalog.filter(i => i.type === 'problem');
+    return `<div class="pagehead"><div><h2>Problem creator</h2><p>Build a simple part, add machined, stamped or 3D-printed features, assign GD&amp;T, and turn it into a graded problem. Problems are catalog items, so each group's Partial list controls who gets them.</p></div></div>
+      <div class="panel pad stack">
+        <form class="row" id="fNewProblem"><label class="fld">Start from<select id="npShape">${Object.entries(SHAPES).map(([k,s]) => `<option value="${k}">${s.label}</option>`).join('')}</select></label><button class="btn primary" type="submit">New problem</button></form>
+        <div class="tblwrap"><table class="tbl"><thead><tr><th>ID</th><th>Title</th><th>Base</th><th>Type</th><th>Status</th><th></th></tr></thead><tbody>${
+          list.map(it => `<tr><td class="mono small">${it.id.toUpperCase()}</td><td>${esc(it.title)}</td><td class="small">${SHAPES[it.problem.shape].label}</td><td class="small">${PTYPES[it.problem.ptype]}</td><td><span class="st ${it.status==='published'?'pub':'draft'}">${it.status==='published'?'Published':'Draft'}</span></td><td class="r"><button class="btn sm" type="button" data-act="pcEdit" data-id="${it.id}">Edit</button></td></tr>`).join('') || '<tr><td colspan="6" class="muted">No problems yet.</td></tr>'}</tbody></table></div>
+      </div>`;
+  }
+  const it = pc.draft, P = it.problem, sh = P.shape;
+  let h = `<div class="pagehead"><div><h2>${pc.isNew ? 'New problem' : 'Edit ' + it.id.toUpperCase()}</h2><p>${SHAPES[sh].label}. Changes apply when you save.</p></div>
+    <div class="row"><button class="btn" type="button" data-act="pcBack">Back to list</button><button class="btn" type="button" data-act="pcPreview">Preview as student</button><button class="btn primary" type="button" data-act="pcSave">Save</button></div></div>`;
+  h += `<div class="creator"><div class="stack">`;
+  // 1 basics
+  h += `<div class="panel pad stack"><h3>1 · Basics</h3><div class="row">
+    <label class="fld" style="flex:2;min-width:220px">Title<input type="text" id="${bid('title')}" data-bind="title" value="${esc(it.title)}"></label>
+    ${inSel('status', it.status, [['draft','Draft'],['published','Published']], 'Status')}
+    ${sh === 'prism' ? inSel('problem.view', P.view, [['3d','3D model'],['2d','2D (top view)']], 'Model view') : ''}</div>
+    <label class="fld">Short description<input type="text" id="${bid('desc')}" data-bind="desc" value="${esc(it.desc)}"></label></div>`;
+  // 2 part
+  h += `<div class="panel pad stack"><h3>2 · Part</h3>`;
+  if (sh === 'stack'){
+    const or = P.dims.orient || 'v', so = sideOpts(or);
+    h += `<div class="row">${inSel('problem.dims.orient', or, Object.entries(ORIENT), 'Start line')}</div>
+      <p class="small muted" style="margin:0">Place each item by which side of the start line it sits on. ${or === 'h' ? 'Above' : 'Right of'} the line adds (+); ${or === 'h' ? 'below' : 'left of'} the line subtracts (−).</p>
+      <div class="tblwrap"><table class="tbl"><thead><tr><th>Item</th><th>Side of start line</th><th>Nominal</th><th>Upper dev</th><th>Lower dev</th><th></th></tr></thead><tbody>${
+      P.dims.chain.map((c,i) => `<tr><td><input type="text" id="${bid('problem.dims.chain.'+i+'.name')}" data-bind="problem.dims.chain.${i}.name" value="${esc(c.name)}" style="width:150px"></td>
+        <td><select id="${bid('problem.dims.chain.'+i+'.dir')}" data-bind="problem.dims.chain.${i}.dir">${so.map(([v,t]) => `<option value="${v}" ${(c.dir==='-'?'-':'+')===v?'selected':''}>${t}</option>`).join('')}</select></td>
+        <td><input type="text" inputmode="decimal" id="${bid('problem.dims.chain.'+i+'.nom')}" data-bind="problem.dims.chain.${i}.nom" data-kind="num" value="${+c.nom}" style="width:80px"></td>
+        <td><input type="text" inputmode="decimal" id="${bid('problem.dims.chain.'+i+'.up')}" data-bind="problem.dims.chain.${i}.up" data-kind="num" value="${+c.up}" style="width:72px"></td>
+        <td><input type="text" inputmode="decimal" id="${bid('problem.dims.chain.'+i+'.lo')}" data-bind="problem.dims.chain.${i}.lo" data-kind="num" value="${+c.lo}" style="width:72px"></td>
+        <td class="r"><button class="btn sm danger" type="button" data-act="pcRowDel" data-i="${i}" aria-label="Remove row ${i+1}">×</button></td></tr>`).join('')}</tbody></table></div>
+      <div class="row"><button class="btn sm" type="button" data-act="pcRowAdd">Add item</button><span class="small muted">Deviations are signed: +.005 / −.003. Unilateral is fine (e.g. +.000 / −.003).</span></div>`;
+  } else if (SHAPES[sh].dims.length){
+    h += `<div class="row">${SHAPES[sh].dims.map(([k,l]) => inNum('problem.dims.'+k, P.dims[k], l)).join('')}</div>`;
+  } else h += `<p class="small muted" style="margin:0">The shaft is built from its turned diameters, in order from the left end. Add or edit them under Features.</p>`;
+  h += `</div>`;
+  if (sh !== 'stack'){
+    // 3 features
+    const kinds = Object.entries(FEAT).filter(([k,d]) => d.shapes.includes(sh));
+    const procs = [...new Set(kinds.map(([k,d]) => d.proc))];
+    h += `<div class="panel pad stack"><h3>3 · Features</h3><div class="row"><label class="fld">Add feature<select id="pcKind">${procs.map(p => `<optgroup label="${p}">${kinds.filter(([k,d]) => d.proc === p).map(([k,d]) => `<option value="${k}">${d.label}</option>`).join('')}</optgroup>`).join('')}</select></label><button class="btn sm primary" type="button" data-act="pcFeatAdd">Add</button></div>`;
+    h += P.features.map((f,i) => { const d = FEAT[f.kind], base = 'problem.features.'+i;
+      let ps = Object.keys(f.params).map(k => {
+        if (k === 'face' && f.kind === 'surface') return inSel(base+'.params.face', f.params.face, [['','Pick a face']].concat(Object.entries(FACES[sh])), 'Face');
+        if (k === 'face') return inSel(base+'.params.face', f.params.face, [['base','Base'],['flange','Flange']], 'On');
+        return inNum(base+'.params.'+k, f.params[k], PLBL[k] || k, 72); }).join('');
+      if (f.size) ps += inNum(base+'.size.0', f.size[0], (d.sizeName || (d.cyl ? 'Ø' : 'Size')) + ' nominal', 72) + inNum(base+'.size.1', f.size[1], '+ tol', 64) + inNum(base+'.size.2', f.size[2], '− tol', 64);
+      return `<div class="frow"><div class="row" style="justify-content:space-between"><b class="mono">${f.id}</b><span class="small muted" style="flex:1">${d.label} · ${d.proc}${d.fos ? ' · feature of size' : ''}</span><button class="btn sm danger" type="button" data-act="pcFeatDel" data-i="${i}">Remove</button></div><div class="row">${ps}</div></div>`; }).join('') || '<div class="empty">No features yet.</div>';
+    h += `</div>`;
+    // 4 datums
+    const tg = [['','—']].concat(Object.entries(FACES[sh]).map(([k,v]) => ['face:'+k, v])).concat(P.features.filter(f => FEAT[f.kind].fos || f.kind === 'surface').map(f => ['feat:'+f.id, `${f.id} · ${FEAT[f.kind].label}`]));
+    h += `<div class="panel pad stack"><h3>4 · Datum features</h3><div class="row">${['A','B','C','D'].map(L => inSel('problem.datums.'+L, P.datums[L] || '', tg, 'Datum ' + L)).join('')}</div>
+      <span class="small muted">Put each datum on a real face or feature, the way the part mounts or is fixtured.</span></div>`;
+    // 5 GD&T
+    const letters = Object.entries(P.datums).filter(([L,t]) => t).map(([L]) => L);
+    h += `<div class="panel pad stack"><h3>5 · GD&amp;T</h3>`;
+    h += P.features.map((f,i) => { const c = f.fcf, base = 'problem.features.'+i+'.fcf', errs = checkFCF(P,f);
+      return `<div class="frow"><div class="row"><b class="mono">${f.id}</b><span class="small muted">${FEAT[f.kind].label}</span><span style="flex:1"></span>${fcfSVG(c, inkColor())}</div>
+        <div class="row">${inSel(base+'.char', c.char, [['','No callout']].concat(Object.entries(CHARS).map(([k,v]) => [k, v.label])), 'Characteristic')}
+        ${c.char ? `<label class="fld">Ø<input type="checkbox" id="${bid(base+'.dia')}" data-bind="${base}.dia" data-kind="bool" ${c.dia?'checked':''}></label>
+        ${inNum(base+'.tol', c.tol, 'Tolerance', 72)}${inSel(base+'.mod', c.mod, [['RFS','RFS'],['MMC','Ⓜ MMC'],['LMC','Ⓛ LMC']], 'Modifier')}
+        ${[0,1,2].map(j => inSel(base+'.datums.'+j, c.datums[j] || '', [['','—']].concat(letters.map(L => [L,L])), ['Primary','Secondary','Tertiary'][j])).join('')}` : ''}</div>
+        ${c.char && P.ptype === 'errors' ? `<div class="row"><label class="fld" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="${bid(base+'.planted')}" data-bind="${base}.planted" data-kind="bool" ${c.planted?'checked':''}> Also count as an error (functional mistake the checker can't see)</label>${c.planted ? `<input type="text" id="${bid(base+'.note')}" data-bind="${base}.note" value="${esc(c.note)}" placeholder="Why it's wrong (shown after submit)" style="flex:1;min-width:200px">` : ''}</div>` : ''}
+        ${errs.length ? `<ul class="warns">${errs.map(e => `<li>${esc(e)}</li>`).join('')}</ul>` : (c.char ? '<div class="small ok">Passes the rule checks.</div>' : '')}</div>`; }).join('') || '<div class="empty">Add features first.</div>';
+    h += `<span class="small muted">Rule checks come from the project's verified reference (control table, §2). They catch rule breaks, not design intent.</span></div>`;
+  }
+  // 6 problem
+  const types = sh === 'stack' ? ['stack'] : ['accept','errors','fcf'];
+  if (!types.includes(P.ptype)) P.ptype = types[0];
+  h += `<div class="panel pad stack"><h3>${sh === 'stack' ? '3' : '6'} · Problem</h3><div class="row">${inSel('problem.ptype', P.ptype, types.map(t => [t, PTYPES[t]]), 'Students will')}</div>
+    <label class="fld">What students read<textarea id="${bid('problem.prompt')}" data-bind="problem.prompt">${esc(P.prompt)}</textarea></label>`;
+  h += answerSetup(P) + `</div>`;
+  h += `<div class="row">${pc.isNew ? '' : `<button class="btn danger" type="button" data-act="pcDelete">${UI.confirm === 'pdel' ? 'Click again to delete this problem' : 'Delete problem'}</button>`}<span style="flex:1"></span><button class="btn" type="button" data-act="pcPreview">Preview as student</button><button class="btn primary" type="button" data-act="pcSave">Save</button></div>`;
+  h += `</div><div class="cside"><div class="panel"><div id="viewerSlot" class="vslot"></div><div class="vbar"><span class="small muted">${sh === 'stack' ? 'Items laid end to end from the start line, on the side you chose. Numbers match the table.' : sh === 'prism' && P.view === '2d' ? '2D top view · drag to pan' : 'Drag to rotate · scroll to zoom'}</span><button class="btn sm" type="button" data-act="viewReset">Reset view</button></div></div></div></div>`;
+  return h;
+}
+function answerSetup(P){
+  if (P.ptype === 'stack'){
+    P.ans = P.ans || {}; if (!P.ans.ask) P.ans.ask = 'wcMin'; if (P.ans.tol == null) P.ans.tol = .0005;
+    const r = evalStack(P.dims.chain), key = ASK[P.ans.ask][1](r);
+    return `<div class="row">${inSel('problem.ans.ask', P.ans.ask, Object.entries(ASK).map(([k,v]) => [k, v[0]]), 'Ask for')}${inNum('problem.ans.tol', P.ans.tol, 'Grade within ±', 80)}</div>
+      <div class="math">Mean gap = Σ(± mean dims) = ${fmt(r.mean)}<br>WC = Σ|t| = ±${fmt(r.wc)} · RSS = √Σt² = ±${fmt(r.rss)} · MRSS = min(1.5·RSS, WC) = ±${fmt(r.mrss)}<br><b>Answer key: ${ASK[P.ans.ask][0]} = ${fmt(key)}</b></div>`;
+  }
+  if (P.ptype === 'accept'){
+    P.ans = P.ans || {}; P.ans.meas = P.ans.meas || {size:0, dx:0, dy:0, dev:0};
+    const cands = P.features.filter(f => f.fcf && f.fcf.char && f.fcf.char !== 'concentricity' && f.fcf.char !== 'symmetry');
+    if (!cands.find(f => f.id === P.ans.feat)) P.ans.feat = cands.length ? cands[0].id : '';
+    if (!cands.length) return `<div class="empty">Give at least one feature a callout in step 5 first.</div>`;
+    const f = cands.find(f => f.id === P.ans.feat), c = f.fcf, d = FEAT[f.kind], m = P.ans.meas;
+    let h = `<div class="row">${inSel('problem.ans.feat', P.ans.feat, cands.map(f => [f.id, `${f.id} · ${FEAT[f.kind].label} · ${CHARS[f.fcf.char].label}`]), 'Feature inspected')}</div><div class="row">`;
+    if (d.fos && f.size) h += inNum('problem.ans.meas.size', m.size, 'Measured size (mating envelope)', 110);
+    if (c.char === 'position'){ h += inNum('problem.ans.meas.dx', m.dx, d.cyl ? 'X offset from true position' : 'Offset of center plane', 110); if (d.cyl) h += inNum('problem.ans.meas.dy', m.dy, 'Y offset', 90); }
+    else h += inNum('problem.ans.meas.dev', m.dev, `Measured ${CHARS[c.char].label.toLowerCase()}`, 110);
+    h += `</div>`;
+    const r = evalAccept(P);
+    if (r) h += `<div class="math">${d.fos && f.size ? `Size ${fmt(+m.size)} within ${fmt(limits(f).lo)}–${fmt(limits(f).hi)}: ${r.sizeOK ? 'yes' : 'NO'}<br>` : ''}${c.mod !== 'RFS' && d.fos ? `Bonus = |size − ${c.mod}| = ${fmt(r.bonus)}<br>` : ''}Allowed = ${fmt(+c.tol)}${c.mod !== 'RFS' && d.fos && r.sizeOK ? ' + ' + fmt(r.bonus) : ''} = ${fmt(r.allowed)}<br>Measured = ${c.char === 'position' ? (d.cyl ? `2√(${fmt(+m.dx)}² + ${fmt(+m.dy)}²)` : `2 × |${fmt(+m.dx)}|`) + ' = ' : ''}${fmt(r.measured)}<br><b>Answer key: ${r.pass ? 'ACCEPT' : 'REJECT'}, measured ${fmt(r.measured)}</b></div>`;
+    if (checkFCF(P,f).length) h += `<div class="msg err">This feature's callout breaks a rule (see step 5). Fix it, or pick another feature, before using it for accept/reject.</div>`;
+    return h;
+  }
+  if (P.ptype === 'errors'){
+    const withC = P.features.filter(f => f.fcf && f.fcf.char), errs = errorSet(P);
+    return `<div class="math">${withC.length} callouts shown to students. ${errs.length} count as wrong: ${errs.join(', ') || 'none yet'}.<br>Students check each frame they think is wrong; they're graded on every frame, right or wrong.</div>`;
+  }
+  if (P.ptype === 'fcf'){
+    const cands = P.features.filter(f => f.fcf && f.fcf.char);
+    if (!cands.find(f => f.id === P.ans.feat)) P.ans.feat = cands.length ? cands[0].id : '';
+    if (!cands.length) return `<div class="empty">Give the target feature its correct callout in step 5 first.</div>`;
+    const f = cands.find(f => f.id === P.ans.feat), errs = checkFCF(P, f);
+    return `<div class="row">${inSel('problem.ans.feat', P.ans.feat, cands.map(f => [f.id, `${f.id} · ${FEAT[f.kind].label}`]), 'Feature students write')}</div>
+      <div class="math">Answer key: ${fcfSVG(f.fcf, inkColor())}<br>Hidden from students. Graded on characteristic, Ø, tolerance, modifier and each datum in order.</div>
+      ${errs.length ? `<div class="msg err">The answer key itself breaks a rule: ${esc(errs[0])}</div>` : ''}`;
+  }
+  return '';
+}
+
+/* ---- Student player ---- */
+function viewPlay(u){
+  const pl = UI.play, it = pl.preview ? UI.pc.draft : item(pl.id);
+  if (!it) { UI.tab = 'problems'; return viewItems(u, 'problem'); }
+  const P = it.problem, best = (progressFor(u.email)[it.id] || {}).score;
+  let h = `<div class="pagehead"><div><span class="small muted mono">${pl.preview ? 'PREVIEW · ' : ''}${it.id.toUpperCase()} · ${PTYPES[P.ptype]}</span><h2>${esc(it.title)}</h2>${!pl.preview && best != null ? `<p>Best score so far: ${best}%</p>` : ''}</div>
+    <button class="btn" type="button" data-act="playBack">${pl.preview ? 'Back to editor' : 'Back to problems'}</button></div>`;
+  h += `<div class="creator"><div class="stack"><div class="panel pad stack"><h3>Problem</h3><p style="margin:0">${esc(P.prompt)}</p>${playForm(P)}</div>
+    <div class="panel pad stack"><h3>${P.shape === 'stack' ? 'Stack data' : 'Drawing data'}</h3>${drawingTable(P, P.ptype === 'fcf' ? P.ans.feat : null)}</div></div>
+    <div class="cside"><div class="panel"><div id="viewerSlot" class="vslot"></div><div class="vbar"><span class="small muted">${P.shape === 'stack' ? 'Items laid end to end from the start line, on the side you chose. Numbers match the table.' : 'Drag to rotate · scroll to zoom'}</span><button class="btn sm" type="button" data-act="viewReset">Reset view</button></div></div></div></div>`;
+  return h;
+}
+function playForm(P){
+  const a = UI.play.ans, res = UI.play.result;
+  let h = '<form id="fPlay" class="stack" novalidate>';
+  if (P.ptype === 'stack'){
+    const ws = a.ws || [], limit = a.fmt === 'limit';
+    const rows = ws.filter(w => w.name || +w.nom || +w.max || +w.min);
+    const r = limit ? evalLimit(ws) : evalStack(rows);
+    const used = rows.length;
+    const or = a.orient || P.dims.orient || 'v', so = sideOpts(or);
+    h += `<div class="stack"><div class="row"><span class="small muted">Start line</span><div class="seg" role="group" aria-label="Start line orientation"><button type="button" data-act="wsOrient" data-v="v" aria-pressed="${or==='v'}">Vertical</button><button type="button" data-act="wsOrient" data-v="h" aria-pressed="${or==='h'}">Horizontal</button></div><span class="small muted">${or === 'h' ? 'Above the line is +, below is −.' : 'Right of the line is +, left is −.'}</span></div>
+      <div class="row" style="justify-content:space-between"><div><b style="font-weight:500">Stack worksheet</b> <span class="small muted">${limit ? 'Limit stack form: enter each step\'s max and min as signed values from the origin. No nominal needed.' : 'Nominal ± form: enter each item\'s nominal and its upper/lower deviations.'}</span></div>
+      <div class="seg" role="group" aria-label="Worksheet format"><button type="button" data-act="wsFmt" data-v="nominal" aria-pressed="${!limit}">Nominal ±</button><button type="button" data-act="wsFmt" data-v="limit" aria-pressed="${limit}">Limit stack</button></div></div>`;
+    if (limit){
+      h += `<div class="tblwrap"><table class="tbl ws"><thead><tr><th>Step</th><th>Description from / to</th><th class="r">Max<br><span class="hint">+MAX, −MIN</span></th><th class="r">Min<br><span class="hint">+MIN, −MAX</span></th><th class="r">Component tol</th></tr></thead><tbody>${
+        ws.map((w,i) => { const mx = +w.max || 0, mn = +w.min || 0, live = w.name || +w.max || +w.min, minus = w.dir === '-';
+          return `<tr><td><input type="text" id="ws-s-${i}" data-ws="${i}.step" value="${esc(w.step || '')}" placeholder="${i+1}" style="width:48px"></td><td><input type="text" id="ws-n-${i}" data-ws="${i}.name" value="${esc(w.name)}" placeholder="From / to" style="width:170px"></td>
+          <td class="r"><input type="text" inputmode="decimal" id="ws-mx-${i}" data-ws="${i}.max" value="${esc(w.max || '')}" style="width:80px" aria-label="Row ${i+1} max"></td>
+          <td class="r"><input type="text" inputmode="decimal" id="ws-mn-${i}" data-ws="${i}.min" value="${esc(w.min || '')}" style="width:80px" aria-label="Row ${i+1} min"></td>
+          <td class="r mono small">${live ? fmt(Math.abs(mx - mn)) : ''}</td></tr>`; }).join('')}</tbody>
+        <tfoot><tr><td colspan="2" class="r small muted">Sub totals: Σ max · Σ min · Σ tol</td><td class="r mono">${used ? fmt(r.maxGap) : ''}</td><td class="r mono">${used ? fmt(r.minGap) : ''}</td><td class="r mono">${used ? fmt(r.tol) : ''}</td></tr>
+        <tr><td colspan="2" class="r small muted">Answer: max gap · min gap · worst case ±</td><td class="r mono">${used ? fmt(r.maxGap) : ''}</td><td class="r mono">${used ? fmt(r.minGap) : ''}</td><td class="r mono">${used ? '±' + fmt(r.tol/2) : ''}</td></tr></tfoot></table></div>
+        <p class="small muted" style="margin:0">Steps ${or === 'h' ? 'above' : 'right of'} the start line are entered positive; steps ${or === 'h' ? 'below' : 'left of'} it are entered negative. For a negative step the Max column takes the smaller number (−.018 is bigger than −.020, so −.018 goes under Max). Max gap = Σ Max, min gap = Σ Min, component tol = |Max − Min|.</p>`;
+    } else {
+      h += `<div class="tblwrap"><table class="tbl ws"><thead><tr><th>#</th><th>Description</th><th>Side of line</th><th>Nominal</th><th>Upper</th><th>Lower</th><th class="r">Mean</th><th class="r">± Equal</th></tr></thead><tbody>${
+        ws.map((w,i) => { const U = +w.up || 0, Lo = +w.lo || 0, m = (+w.nom || 0) + (U+Lo)/2, t = (U-Lo)/2, live = w.name || +w.nom;
+          return `<tr><td class="mono small">${i+1}</td><td><input type="text" id="ws-n-${i}" data-ws="${i}.name" value="${esc(w.name)}" placeholder="Item" style="width:150px"></td>
+          <td><select id="ws-d-${i}" data-ws="${i}.dir">${so.map(([v,t]) => `<option value="${v}" ${(w.dir==='-'?'-':'+')===v?'selected':''}>${t}</option>`).join('')}</select></td>
+          <td><input type="text" inputmode="decimal" id="ws-o-${i}" data-ws="${i}.nom" value="${esc(w.nom)}" style="width:80px"></td>
+          <td><input type="text" inputmode="decimal" id="ws-u-${i}" data-ws="${i}.up" value="${esc(w.up)}" placeholder="+.000" style="width:72px"></td>
+          <td><input type="text" inputmode="decimal" id="ws-l-${i}" data-ws="${i}.lo" value="${esc(w.lo)}" placeholder="−.000" style="width:72px"></td>
+          <td class="r mono small">${live ? fmt(m) : ''}</td><td class="r mono small">${live ? fmt(Math.abs(t)) : ''}</td></tr>`; }).join('')}</tbody>
+        <tfoot><tr><td colspan="6" class="r small muted">Mean gap (Σ ± means) · WC (Σ|t|) · RSS (√Σt²)</td><td class="r mono">${used ? fmt(r.mean) : ''}</td><td class="r mono small">${used ? `±${fmt(r.wc)} · ±${fmt(r.rss)}` : ''}</td></tr></tfoot></table></div>
+        <p class="small muted" style="margin:0">Mean = nominal + (upper + lower)/2. Equal ± = (upper − lower)/2.</p>`;
+    }
+    h += `<div class="row"><button class="btn sm" type="button" data-act="wsAdd">Add row</button><button class="btn sm" type="button" data-act="wsClear">Clear worksheet</button><span class="small muted">Switching format converts what you've entered. The totals are scratch work; only the final answer is graded.</span></div>
+      <label class="fld" style="max-width:260px"><b style="color:var(--ink)">Final answer: ${ASK[P.ans.ask][0]} (in)</b><input type="text" inputmode="decimal" id="pa-val" data-ans="val" value="${esc(a.val || '')}" style="width:160px;font-size:16px"></label></div>`;
+  }
+  if (P.ptype === 'accept'){
+    const f = P.features.find(x => x.id === P.ans.feat), c = f.fcf, d = FEAT[f.kind], m = P.ans.meas;
+    const lines = [];
+    if (d.fos && f.size) lines.push(`Size (mating envelope): ${d.cyl ? 'Ø' : ''}${fmt(+m.size)}`);
+    if (c.char === 'position'){ lines.push(d.cyl ? `Axis offset from true position: X ${sgn(+m.dx)}, Y ${sgn(+m.dy)}` : `Center plane offset from true position: ${sgn(+m.dx)}`); }
+    else lines.push(`Measured ${CHARS[c.char].label.toLowerCase()}: ${fmt(+m.dev)}`);
+    h += `<div class="msg info"><b>${f.id} inspection results</b><br>${lines.join('<br>')}</div>
+      <div class="row"><label class="fld">Decision<select id="pa-verdict" data-ans="verdict"><option value="">Choose…</option><option value="accept" ${a.verdict==='accept'?'selected':''}>Accept</option><option value="reject" ${a.verdict==='reject'?'selected':''}>Reject</option></select></label>
+      <label class="fld">${c.char === 'position' ? 'Measured position' : 'Measured value'} (in)<input type="text" inputmode="decimal" id="pa-val" data-ans="val" value="${esc(a.val || '')}" style="width:120px"></label></div>`;
+  }
+  if (P.ptype === 'errors'){
+    const col = inkColor();
+    h += `<div class="stack">${P.features.filter(f => f.fcf && f.fcf.char).map(f => `<label class="errpick"><input type="checkbox" id="pa-e-${f.id}" data-ans="e.${f.id}" data-kind="bool" ${a.e && a.e[f.id] ? 'checked' : ''}><span class="mono small">${f.id}</span><span class="small muted" style="min-width:120px">${FEAT[f.kind].label}</span>${fcfSVG(f.fcf, col)}<span class="small muted">This frame is wrong</span></label>`).join('')}</div>`;
+  }
+  if (P.ptype === 'fcf'){
+    const letters = Object.entries(P.datums).filter(([L,t]) => t).map(([L]) => L);
+    const sel = (k, opts, label) => `<label class="fld">${label}<select id="pa-${k}" data-ans="${k}">${opts.map(([v,t]) => `<option value="${esc(v)}" ${String(a[k]||'')===String(v)?'selected':''}>${esc(t)}</option>`).join('')}</select></label>`;
+    h += `<div class="row">${sel('char', [['','Choose…']].concat(Object.entries(CHARS).map(([k,v]) => [k, v.label])), 'Characteristic')}
+      <label class="fld">Ø<input type="checkbox" id="pa-dia" data-ans="dia" data-kind="bool" ${a.dia?'checked':''}></label>
+      <label class="fld">Tolerance<input type="text" inputmode="decimal" id="pa-tol" data-ans="tol" value="${esc(a.tol || '')}" style="width:90px"></label>
+      ${sel('mod', [['RFS','RFS'],['MMC','Ⓜ MMC'],['LMC','Ⓛ LMC']], 'Modifier')}
+      ${[0,1,2].map(j => sel('d'+j, [['','—']].concat(letters.map(L => [L,L])), ['Primary','Secondary','Tertiary'][j])).join('')}</div>
+      <div>${a.char ? fcfSVG({char:a.char, dia:a.dia, tol:+a.tol||0, mod:a.mod||'RFS', datums:[a.d0,a.d1,a.d2]}, inkColor()) : ''}</div>`;
+  }
+  h += `<div class="row"><button class="btn primary" type="submit">Check my answer</button>${res ? `<span class="score-pill ${res.score >= 80 ? 'good' : 'low'}">${res.score}%</span>` : ''}</div>`;
+  if (res) h += `<div class="msg ${res.score === 100 ? 'ok' : 'info'}">${res.html}</div>`;
+  return h + '</form>';
+}
+function grade(P, a){
+  if (P.ptype === 'stack'){
+    const key = ASK[P.ans.ask][1](evalStack(P.dims.chain)), v = parseFloat(a.val), ok = Math.abs(v - key) <= (+P.ans.tol || .0005) + 1e-9;
+    const r = evalStack(P.dims.chain);
+    return {score: ok ? 100 : 0, html: `${ok ? 'Correct.' : 'Not quite.'} ${ASK[P.ans.ask][0]} = ${fmt(key)}.<br><span class="mono small">Mean ${fmt(r.mean)} · WC ±${fmt(r.wc)} · RSS ±${fmt(r.rss)}. Convert unequal tolerances to mean ± equal first: mean = nominal + (upper + lower)/2.</span>`};
+  }
+  if (P.ptype === 'accept'){
+    const r = evalAccept(P), v = parseFloat(a.val);
+    const okV = a.verdict === (r.pass ? 'accept' : 'reject'), okN = Math.abs(v - r.measured) <= .0002;
+    const why = !r.sizeOK ? 'Size is outside its limits, so the part is rejected regardless of location.' : `Allowed ${fmt(r.allowed)}${r.bonus > 0 ? ` (includes ${fmt(r.bonus)} bonus)` : ''}; measured ${fmt(r.measured)}.`;
+    return {score: (okV ? 50 : 0) + (okN ? 50 : 0), html: `Decision ${okV ? 'correct' : 'should be ' + (r.pass ? 'ACCEPT' : 'REJECT')}. Measured value ${okN ? 'correct' : 'should be ' + fmt(r.measured)}.<br>${why}`};
+  }
+  if (P.ptype === 'errors'){
+    const fs = P.features.filter(f => f.fcf && f.fcf.char), wrong = new Set(errorSet(P)); let right = 0;
+    const lines = fs.map(f => { const said = !!(a.e && a.e[f.id]), is = wrong.has(f.id); if (said === is) right++;
+      const why = is ? checkFCF(P,f).concat(f.fcf.planted && f.fcf.note ? [f.fcf.note] : []).join(' ') : 'This frame is valid.';
+      return `<b class="mono">${f.id}</b> ${said === is ? '✓' : '✗'} ${esc(why)}`; });
+    return {score: Math.round(right / Math.max(1, fs.length) * 100), html: lines.join('<br>')};
+  }
+  if (P.ptype === 'fcf'){
+    const k = P.features.find(x => x.id === P.ans.feat).fcf; const checks = [
+      ['Characteristic', a.char === k.char, CHARS[k.char].label], ['Ø symbol', !!a.dia === !!k.dia, k.dia ? 'Ø' : 'no Ø'],
+      ['Tolerance', Math.abs(parseFloat(a.tol) - k.tol) < 1e-6, fmt(k.tol)], ['Modifier', (a.mod || 'RFS') === k.mod, k.mod],
+      ['Primary datum', (a.d0 || '') === (k.datums[0] || ''), k.datums[0] || 'none'], ['Secondary datum', (a.d1 || '') === (k.datums[1] || ''), k.datums[1] || 'none'],
+      ['Tertiary datum', (a.d2 || '') === (k.datums[2] || ''), k.datums[2] || 'none']];
+    const n = checks.filter(c => c[1]).length;
+    return {score: Math.round(n / checks.length * 100), html: checks.map(c => `${c[1] ? '✓' : '✗'} ${c[0]}${c[1] ? '' : ': should be ' + esc(c[2])}`).join('<br>') + `<br>Answer: ${fcfSVG(k, inkColor())}`};
+  }
+  return {score:0, html:''};
+}
+
+/* ===================== Store: Firebase (Auth + Firestore) ===================== */
+// The page keeps one in-memory copy (DB) shaped like the mockup's. After every action,
+// save() compares DB with the last copy read from Firestore and writes only what changed,
+// in ONE batch. The security rules decide whether the batch is allowed. If they refuse,
+// the page says so and reloads the real data.
+const BOOTSTRAP_EMAIL = 'interactive.gd.t@gmail.com';
+const EMAIL_KEY = 'gdtEmailForSignIn';
+const COLS = {people:'email', groups:'id', catalog:'id', requests:'id'};
+let DB = null, SNAP = null, AUTH = {state:'loading', user:null};
+const clean = o => JSON.parse(JSON.stringify(o));                      // drops undefined (Firestore rejects it)
+const stripKey = (o, k) => { const c = clean(o); delete c[k]; return c; };
+function snapshotOf(d){
+  const s = {progress: clean(d.progress || {})};
+  Object.entries(COLS).forEach(([c,k]) => { s[c] = {}; (d[c] || []).forEach(x => s[c][x[k]] = stripKey(x, k)); });
+  return s;
+}
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+function save(){
+  if (!DB || !SNAP || AUTH.state !== 'active') return;
+  const now = snapshotOf(DB), batch = writeBatch(fdb);
+  let n = 0;
+  Object.keys(COLS).concat(['progress']).forEach(c => {
+    const a = SNAP[c], b = now[c];
+    Object.keys(b).forEach(id => { if (!a[id] || !same(a[id], b[id])) { batch.set(doc(fdb, c, id), b[id]); n++; } });
+    Object.keys(a).forEach(id => { if (!b[id]) { batch.delete(doc(fdb, c, id)); n++; } });
+  });
+  if (!n) return;
+  const prev = SNAP; SNAP = now;
+  batch.commit().catch(err => {
+    console.error('[gdt] save refused', err);
+    SNAP = prev;
+    toast(err.code === 'permission-denied' ? 'Not saved: you don’t have permission for that change.' : 'Not saved: ' + (err.message || err));
+    loadAll().then(render);
+  });
+}
+async function getAll(q){ const s = await getDocs(q); return s.docs.map(d => ({id:d.id, data:d.data()})); }
+async function loadAll(){
+  const email = AUTH.user.email.toLowerCase();
+  const meSnap = await getDoc(doc(fdb, 'people', email));
+  const meRec = Object.assign({email}, meSnap.data());
+  const r = meRec.role, manager = ['owner','admin','creator'].includes(r), staff = manager || r === 'instructor';
+  const d = {who: email, catalog: [], groups: [], people: [], requests: [], progress: {}};
+  d.catalog = (await getAll(collection(fdb, 'catalog'))).map(x => Object.assign({id:x.id}, x.data))
+    .sort((a,b) => (a.order ?? 999) - (b.order ?? 999) || a.id.localeCompare(b.id));
+  const people = {}; people[email] = meRec;
+  const addPeople = list => list.forEach(x => people[x.id] = Object.assign({email:x.id}, x.data));
+  if (manager){
+    addPeople(await getAll(collection(fdb, 'people')));
+    d.groups = (await getAll(collection(fdb, 'groups'))).map(x => Object.assign({id:x.id}, x.data));
+    d.requests = (await getAll(collection(fdb, 'requests'))).map(x => Object.assign({id:x.id}, x.data))
+      .sort((a,b) => String(b.date).localeCompare(String(a.date)));
+    (await getAll(collection(fdb, 'progress'))).forEach(x => d.progress[x.id] = x.data);
+  } else if (r === 'instructor'){
+    addPeople(await getAll(query(collection(fdb, 'people'), where('group', '==', null))));
+    d.groups = (await getAll(query(collection(fdb, 'groups'), where('instructors', 'array-contains', email)))).map(x => Object.assign({id:x.id}, x.data));
+    for (const g of d.groups) addPeople(await getAll(query(collection(fdb, 'people'), where('group', '==', g.id))));
+  } else if (meRec.group){
+    const g = await getDoc(doc(fdb, 'groups', meRec.group));
+    if (g.exists()) d.groups = [Object.assign({id:g.id}, g.data())];
+  }
+  d.people = Object.values(people);
+  if (!manager){
+    const emails = staff ? d.people.filter(p => p.group).map(p => p.email).concat(email) : [email];
+    for (const e of emails){ const p = await getDoc(doc(fdb, 'progress', e)); if (p.exists()) d.progress[e] = p.data(); }
+  }
+  DB = d; SNAP = snapshotOf(d);
+}
+// First sign-in by the site's bootstrap email, while the site has no config yet: become Owner.
+async function tryBootstrap(email){
+  if (email !== BOOTSTRAP_EMAIL) return false;
+  try {
+    const b = writeBatch(fdb);
+    b.set(doc(fdb, 'site', 'config'), {ownerEmail: email});
+    b.set(doc(fdb, 'people', email), {name:'Site Owner', role:'owner', status:'active', group:null, invitedBy:'bootstrap', invitedAt: today()});
+    await b.commit();
+    return true;
+  } catch(e){ console.error('[gdt] bootstrap refused', e); return false; }
+}
+async function afterSignIn(user){
+  AUTH = {state:'loading', user}; render();
+  const email = user.email.toLowerCase();
+  try {
+    let s = await getDoc(doc(fdb, 'people', email));
+    if (!s.exists() && await tryBootstrap(email)) s = await getDoc(doc(fdb, 'people', email));
+    if (!s.exists()){
+      UI.landingMsg = {kind:'err', text:`<b>${esc(email)}</b> hasn't been invited yet. Ask your company's training contact to add you, or request access for your company below.`};
+      AUTH = {state:'out', user:null}; await signOut(auth); return render();
+    }
+    if (s.data().status === 'invited'){ AUTH = {state:'invited', user}; UI.signupEmail = email; UI.signupStep = 'name'; return render(); }
+    await loadAll();
+    AUTH = {state:'active', user}; UI.signupStep = null; UI.tab = UI.tab || 'learn';
+    render();
+  } catch(e){
+    console.error('[gdt] sign-in load failed', e);
+    UI.landingMsg = {kind:'err', text:'Signed in, but the site data could not be loaded (' + esc(e.code || e.message) + '). Try again, or contact the site owner.'};
+    AUTH = {state:'out', user:null}; await signOut(auth); render();
+  }
+}
+// Starter catalog the Owner can load once into an empty site.
+function starterCatalog(){
+  return [
+    {id:'l01', type:'lesson', title:'Position at MMC with bonus tolerance', desc:'Cylindrical zone that grows as the hole departs from MMC.', status:'draft', order:1},
+    {id:'l02', type:'lesson', title:'Datum reference frame (3-2-1)', desc:'Degrees of freedom and why datum order changes the answer.', status:'draft', order:2},
+    {id:'t01', type:'tool', title:'1D stack-up calculator', desc:'Worst case, RSS and modified RSS side by side, with a loop diagram.', status:'draft', order:20},
+    {id:'t02', type:'tool', title:'Fastener and virtual condition calculator', desc:'Floating and fixed fastener formulas, VC and resultant condition.', status:'draft', order:21}
+  ].concat(sampleProblems().map((p,i) => Object.assign(p, {status:'draft', order:40 + i})));
+}
+// Lesson / tool page bodies live in content/{id}, readable only by people allowed to open the item.
+function stripSeriesNav(html){ return html.replace(/<div class="series">[\s\S]*?<\/nav>\s*<\/div>\s*<\/div>/, ''); }
+async function openItem(u, it){
+  try {
+    const s = await getDoc(doc(fdb, 'content', it.id));
+    if (!s.exists()) return toast(`"${it.title}" has no page uploaded yet.`);
+    const ov = $('viewer'); $('viewerTitle').textContent = it.title;
+    const fr = $('viewerFrame'); fr.srcdoc = s.data().html;
+    ov.hidden = false; document.body.style.overflow = 'hidden';
+  } catch(e){ toast(e.code === 'permission-denied' ? 'That item is not included in your access.' : 'Could not open: ' + (e.message || e)); }
+}
+function closeViewer(){ $('viewer').hidden = true; $('viewerFrame').srcdoc = ''; document.body.style.overflow = ''; }
+async function uploadPage(it, file){
+  if (!file) return;
+  if (file.size > 900000) return toast('That file is over 900 KB. Firestore documents are limited to 1 MB.');
+  const html = stripSeriesNav(await file.text());
+  try {
+    await setDoc(doc(fdb, 'content', it.id), {html, file: file.name, updatedAt: new Date().toISOString(), by: DB.who});
+    it.page = file.name; save(); render(); toast(`Page uploaded for ${it.id.toUpperCase()}.`);
+  } catch(e){ toast('Upload refused: ' + (e.code || e.message)); }
+}
+
+/* ===================== Helpers ===================== */
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const norm = e => String(e || '').trim().toLowerCase();
+const isEmail = e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+const person = email => DB.people.find(p => p.email === email);
+const me = () => (DB && AUTH.state === 'active') ? (person(DB.who) || null) : null;
+const groupOf = u => u && u.group ? DB.groups.find(g => g.id === u.group) : null;
+const groupById = id => DB.groups.find(g => g.id === id);
+const item = id => DB.catalog.find(i => i.id === id);
+const nameOf = p => p ? (p.name || p.email) : '—';
+let toastT;
+function toast(t){ const el = $('toast'); el.textContent = t; el.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('show'), 3200); }
+function today(){ return new Date().toISOString().slice(0,10); }
+
+/* ===================== UI state ===================== */
+const UI = {tab:'learn', group:null, landingMsg:null, signupStep:null, signupEmail:'', reqMsg:null, confirm:null, pc:{draft:null, isNew:false}, play:{id:null, preview:false, ans:{}, result:null}};
+
+/* ===================== Signed-in identity (header) ===================== */
+function renderWho(){
+  const u = me();
+  $('whoName').textContent = u ? nameOf(u) : (AUTH.user ? AUTH.user.email : '');
+  $('whoRole').innerHTML = u ? `<span class="rolechip${ROLES[u.role].staff?'':' student'}">${ROLES[u.role].label}${groupOf(u) ? ' · ' + esc(groupOf(u).name) : ''}</span>` : '';
+}
+
+/* ===================== Landing (signed out) ===================== */
+function renderLanding(){
+  const m = UI.landingMsg;
+  let signin;
+  if (AUTH.state === 'loading'){
+    signin = `<div class="msg info">Signing you in…</div>`;
+  } else if (UI.signupStep === 'confirm'){
+    signin = `<form class="form" id="fConfirm" novalidate>
+      <div class="msg info">You opened a sign-in link on a different browser or device. Enter the email the link was sent to.</div>
+      <label>Work email<input type="email" id="cfEmail" required autocomplete="email"></label>
+      <button class="btn primary" type="submit">Sign in</button>
+      ${m ? `<div class="msg ${m.kind}">${m.text}</div>` : ''}
+    </form>`;
+  } else if (UI.signupStep === 'name'){
+    signin = `<form class="form" id="fName">
+      <div class="msg info">You're signed in as <b>${esc(UI.signupEmail)}</b> and on the invitation list. Add your name to finish.</div>
+      <label>Your name<input type="text" id="suName" required autocomplete="name"></label>
+      <div class="row"><button class="btn primary" type="submit">Finish sign-up</button><button class="btn" type="button" data-act="signout">Cancel</button></div>
+    </form>`;
+  } else {
+    signin = `<form class="form" id="fSignin" novalidate>
+      <label>Work email<input type="email" id="siEmail" required autocomplete="email" placeholder="you@company.com" value="${esc(UI.signupEmail)}"></label>
+      <button class="btn primary" type="submit">Email me a sign-in link</button>
+      ${m ? `<div class="msg ${m.kind}">${m.text}</div>` : ''}
+      <p class="small muted" style="margin:0">Access is by invitation. Your company's training contact adds your email, then you sign in here with a one-time link. No password.</p>
+    </form>`;
+  }
+  const r = UI.reqMsg;
+  return `<div class="wrap">
+    <section class="hero">
+      <div>
+        <h1>Learn GD&amp;T and tolerance stack-up on real 3D geometry</h1>
+        <p class="lede">Interactive lessons on ASME Y14.5-2018 and browser-based stack-up tools, set up for your team. Your training contact decides who on the team sees which lessons and tools.</p>
+      </div>
+      <div class="panel pad"><h2 style="margin-bottom:10px">Sign in</h2>${signin}</div>
+    </section>
+    <div class="offer">
+      <div class="panel"><div class="k">LESSONS</div><h3>3D GD&amp;T lessons</h3><p>Rotate the part, move the sliders, and watch the tolerance zone and pass/fail update live. Each lesson ends with a short quiz.</p></div>
+      <div class="panel"><div class="k">TOOLS</div><h3>Stack-up calculators</h3><p>Worst case, RSS, modified RSS and statistical methods side by side, plus fastener and virtual condition calculators.</p></div>
+      <div class="panel"><div class="k">TEAMS</div><h3>Training for your company</h3><p>Each company gets its own group. Instructors see their students' progress and quiz results.</p></div>
+    </div>
+    <section class="panel pad" style="margin-bottom:28px">
+      <h2>Request access for your company</h2>
+      <p class="muted small" style="margin:4px 0 12px">We set up a group for your team and send invitations to the people you list.</p>
+      <form class="form" id="fReq" novalidate style="max-width:720px">
+        <div class="two"><label>Company<input type="text" id="rqCo" required></label><label>Your name<input type="text" id="rqName" required autocomplete="name"></label></div>
+        <div class="two"><label>Work email<input type="email" id="rqEmail" required autocomplete="email"></label>
+          <label>Team size<select id="rqSize"><option>1–5</option><option>6–10</option><option>11–25</option><option>26+</option></select></label></div>
+        <label>What would your team like to learn?<textarea id="rqNote"></textarea></label>
+        <div class="row"><button class="btn primary" type="submit">Send request</button></div>
+        ${r ? `<div class="msg ${r.kind}">${r.text}</div>` : ''}
+      </form>
+    </section>
+    <footer>GD&amp;T in 3D · ASME Y14.5-2018 · generic example parts only.</footer>
+  </div>`;
+}
+
+/* ===================== Signed-in shell ===================== */
+function tabsFor(u){
+  const learn = [['learn','My learning'],['lessons','3D lessons'],['tools','Stack-up tools'],['problems','Practice problems']];
+  const manage = [];
+  const visibleGroups = DB.groups.filter(g => can(u,'viewGroup',g));
+  if (visibleGroups.length || can(u,'createGroup')) manage.push(['groups','Groups', visibleGroups.length]);
+  if (can(u,'viewRequests')) manage.push(['requests','Access requests', DB.requests.filter(r=>!r.done).length]);
+  if (can(u,'viewStaff')) manage.push(['staff','Owner & contributors']);
+  if (can(u,'editContent')) manage.push(['content','Content']);
+  if (can(u,'createProblems')) manage.push(['creator','Problem creator']);
+  if (can(u,'viewRoles')) manage.push(['roles','Roles & permissions']);
+  return {learn, manage};
+}
+function renderApp(u){
+  const t = tabsFor(u);
+  const all = t.learn.concat(t.manage).map(x => x[0]).concat(['play']);
+  if (!all.includes(UI.tab)) UI.tab = 'learn';
+  const btn = ([id,label,n]) => `<button type="button" data-tab="${id}" ${UI.tab===id?'aria-current="page"':''}>${label}${n!=null?`<span class="count">${n}</span>`:''}</button>`;
+  let side = `<div><div class="grp">Learn</div><nav aria-label="Learn">${t.learn.map(btn).join('')}</nav></div>`;
+  if (t.manage.length) side += `<div><div class="grp">Manage</div><nav aria-label="Manage">${t.manage.map(btn).join('')}</nav></div>`;
+  side += `<div><button type="button" data-act="signout" style="color:var(--muted)">Sign out</button></div>`;
+  const views = {learn:viewLearn, lessons:()=>viewItems(u,'lesson'), tools:()=>viewItems(u,'tool'), problems:()=>viewItems(u,'problem'), groups:viewGroups, requests:viewRequests, staff:viewStaff, content:viewContent, creator:viewCreator, roles:viewRoles, play:viewPlay};
+  return `<div class="wrap app"><aside class="side">${side}</aside><section>${views[UI.tab](u)}</section></div>`;
+}
+
+/* ---- Learn ---- */
+function progressFor(email){ return DB.progress[email] || {}; }
+function itemCard(u, it){
+  const ok = canOpen(u, it), p = progressFor(u.email)[it.id] || {};
+  const isLesson = it.type === 'lesson', isProb = it.type === 'problem';
+  let foot;
+  if (!ok) foot = `<span class="small muted">Not included in your access. Ask your instructor.</span>`;
+  else if (isProb) foot = `<div class="row"><button class="btn sm primary" type="button" data-act="play" data-id="${it.id}">${p.opened ? 'Try again' : 'Start'}</button><span class="small muted">${PTYPES[it.problem.ptype]}</span></div>`;
+  else {
+    foot = `<div class="row"><button class="btn sm primary" type="button" data-act="open" data-id="${it.id}">${p.opened ? 'Open again' : 'Open'}</button>`;
+    if (isLesson && p.opened) foot += `<label class="small muted">Quiz score <select data-act="quiz" data-id="${it.id}"><option value="">–</option>${[0,1,2,3,4,5].map(n=>`<option ${p.quiz===n?'selected':''}>${n}</option>`).join('')}</select> / 5</label>`;
+    foot += `</div>`;
+  }
+  const status = it.status === 'draft' ? ` <span class="st draft">Draft · staff only</span>` : '';
+  const done = p.opened ? `<span class="st active">${isProb ? (p.score!=null ? `Best ${p.score}%` : 'Started') : isLesson ? (p.quiz!=null ? `Quiz ${p.quiz}/5` : 'Opened') : 'Used'}</span>` : '';
+  return `<div class="panel item${ok?'':' locked'}"><div class="row" style="justify-content:space-between"><span class="k">${it.id.toUpperCase()} · ${TYPE_LABEL[it.type]}</span>${done}</div><h3>${esc(it.title)}${status}</h3><p>${esc(it.desc)}</p>${foot}</div>`;
+}
+function viewLearn(u){
+  const visible = DB.catalog.filter(it => canOpen(u,it));
+  const lessons = visible.filter(i=>i.type==='lesson'), opened = lessons.filter(i => (progressFor(u.email)[i.id]||{}).opened).length;
+  const g = groupOf(u);
+  let note = '';
+  if (u.role === 'student_partial'){
+    const pubCount = DB.catalog.filter(i=>i.status==='published').length;
+    note = `<div class="msg info" style="margin-bottom:14px">${esc(g ? g.name : 'Your group')} gives you ${visible.length} of ${pubCount} lessons and tools. Ask your instructor if you need more.</div>`;
+  } else if (u.role === 'student_full'){
+    note = `<div class="msg info" style="margin-bottom:14px">You have full access: every published lesson and tool.</div>`;
+  } else {
+    note = `<div class="msg info" style="margin-bottom:14px">Staff see every published item${can(u,'editContent')?', plus drafts':''}.</div>`;
+  }
+  const pct = lessons.length ? Math.round(opened/lessons.length*100) : 0;
+  return `<div class="pagehead"><div><h2>Welcome, ${esc(nameOf(u))}</h2><p>${ROLES[u.role].label}${g?` in ${esc(g.name)}`:''}</p></div>
+    <div class="prog" style="min-width:240px"><span>${opened} of ${lessons.length} lessons opened</span><div class="bar"><i style="width:${pct}%"></i></div></div></div>
+    ${note}<div class="cards">${visible.map(it=>itemCard(u,it)).join('') || '<div class="empty">Nothing assigned yet.</div>'}</div>`;
+}
+function viewItems(u, type){
+  const list = DB.catalog.filter(i => i.type === type && (i.status === 'published' || can(u,'editContent')));
+  const title = {lesson:'3D lessons', tool:'Stack-up tools', problem:'Practice problems'}[type];
+  const sub = {lesson:'Interactive GD&amp;T lessons. Greyed-out cards are outside your access.', tool:'The stack-up workbook, rebuilt as browser tools. Greyed-out cards are outside your access.', problem:'Graded problems built by your instructors: stack calculations, accept/reject calls, error hunts and writing callouts.'}[type];
+  return `<div class="pagehead"><div><h2>${title}</h2><p>${sub}</p></div></div><div class="cards">${list.map(it=>itemCard(u,it)).join('')}</div>`;
+}
+
+/* ---- Groups ---- */
+function viewGroups(u){
+  const gs = DB.groups.filter(g => can(u,'viewGroup',g));
+  if (!UI.group || !gs.find(g=>g.id===UI.group)) UI.group = gs.length ? gs[0].id : null;
+  let list = gs.map(g => {
+    const n = DB.people.filter(p=>p.group===g.id).length;
+    return `<button type="button" class="gbtn" data-group="${g.id}" aria-current="${UI.group===g.id}"><b>${esc(g.name)}</b><span>${n} ${n===1?'person':'people'} · ${g.allowed.length} items for Partial</span></button>`;
+  }).join('');
+  if (!gs.length) list = `<div class="empty">${u.role==='instructor' ? 'No groups are assigned to you yet.' : 'No groups yet.'}</div>`;
+  if (can(u,'createGroup')) list += `<form class="form" id="fNewGroup" style="margin-top:8px"><label>New group<input type="text" id="ngName" placeholder="Company name" required></label><button class="btn sm primary" type="submit">Create group</button></form>`;
+  const g = UI.group ? groupById(UI.group) : null;
+  return `<div class="pagehead"><div><h2>Groups</h2><p>One group per company. Invite its people by email and choose what each one can use.</p></div></div>
+    <div class="split"><div class="glist">${list}</div><div>${g ? groupDetail(u,g) : ''}</div></div>`;
+}
+function groupDetail(u, g){
+  const members = DB.people.filter(p => p.group === g.id);
+  const mm = can(u,'manageMembers'), ef = can(u,'editFeatures'), ai = can(u,'assignInstructors');
+  const pub = DB.catalog;
+  // header
+  let h = `<div class="panel pad stack"><div class="row" style="justify-content:space-between"><div><h2>${esc(g.name)}</h2><span class="small muted">Created ${esc(g.created)} · ${members.length} people</span></div>`;
+  if (can(u,'deleteGroup')){
+    const armed = UI.confirm === 'del:'+g.id;
+    h += `<button class="btn sm danger" type="button" data-act="delGroup" data-id="${g.id}">${armed ? 'Click again to delete group and its people' : 'Delete group'}</button>`;
+  }
+  h += `</div>`;
+  // features
+  h += `<div class="sec"><h3>What Partial Access includes<small>Full Access always gets every published item</small></h3><div class="checks">`;
+  pub.forEach(it => {
+    h += `<label><input type="checkbox" data-act="feature" data-id="${it.id}" ${g.allowed.includes(it.id)?'checked':''} ${ef?'':'disabled'}><span>${esc(it.title)}<br><span class="small muted">${TYPE_LABEL[it.type]}${it.status==='draft'?' · draft, hidden until published':''}</span></span></label>`;
+  });
+  h += `</div>${ef?'':'<span class="small muted">Only Owner, Admin and Creator-Instructor can change this.</span>'}</div>`;
+  // instructors
+  const instr = g.instructors.map(e => person(e)).filter(Boolean);
+  h += `<div class="sec"><h3>Instructors</h3><div class="chips">`;
+  h += instr.length ? instr.map(p => `<span class="pchip">${esc(nameOf(p))}${ai?`<button type="button" aria-label="Remove ${esc(nameOf(p))} from this group" data-act="unassign" data-email="${esc(p.email)}">×</button>`:''}</span>`).join('') : '<span class="small muted">None assigned.</span>';
+  if (ai){
+    const pool = DB.people.filter(p => (p.role==='instructor' || p.role==='creator') && !g.instructors.includes(p.email));
+    if (pool.length) h += `<select id="asgSel" aria-label="Instructor to assign">${pool.map(p=>`<option value="${esc(p.email)}">${esc(nameOf(p))} · ${ROLES[p.role].label}</option>`).join('')}</select><button class="btn sm" type="button" data-act="assign">Assign</button>`;
+  }
+  h += `</div></div>`;
+  // invite
+  if (mm){
+    h += `<div class="sec"><h3>Invite people</h3><form class="row" id="fInvite" novalidate>
+      <input type="email" id="invEmail" placeholder="name@company.com" aria-label="Email to invite" style="flex:1;min-width:200px">
+      <select id="invRole" aria-label="Access">${STUDENT_ROLES.map(r=>`<option value="${r}">${ROLES[r].label}</option>`).join('')}</select>
+      <button class="btn primary" type="submit">Invite</button></form>
+      <span class="small muted">Adding an email puts it on the invitation list. Send them the site link; they sign in with a one-time email link from Firebase.</span></div>`;
+  }
+  // members
+  h += `<div class="sec"><h3>People</h3>`;
+  if (!members.length) h += `<div class="empty">No one yet.</div>`;
+  else {
+    const showProg = can(u,'viewProgress',g);
+    h += `<div class="tblwrap"><table class="tbl"><thead><tr><th>Person</th><th>Access</th><th>Status</th>${showProg?'<th class="r">Progress</th>':''}<th></th></tr></thead><tbody>`;
+    members.forEach(p => {
+      const role = mm ? `<select data-act="memberRole" data-email="${esc(p.email)}" aria-label="Access for ${esc(p.email)}">${STUDENT_ROLES.map(r=>`<option value="${r}" ${p.role===r?'selected':''}>${ROLES[r].label}</option>`).join('')}</select>` : ROLES[p.role].label;
+      let prog = '';
+      if (showProg){
+        const avail = DB.catalog.filter(i => i.type==='lesson' && canOpen({...p, status:'active'}, i));
+        const pr = progressFor(p.email), op = avail.filter(i => (pr[i.id]||{}).opened).length;
+        const qs = avail.map(i => (pr[i.id]||{}).quiz).filter(q => q!=null);
+        const ps = DB.catalog.filter(i => i.type==='problem').map(i => (pr[i.id]||{}).score).filter(q => q!=null);
+        prog = `<td class="r mono small">${op}/${avail.length} lessons${qs.length?` · quiz avg ${(qs.reduce((a,b)=>a+b,0)/qs.length).toFixed(1)}`:''}${ps.length?` · ${ps.length} problems avg ${Math.round(ps.reduce((a,b)=>a+b,0)/ps.length)}%`:''}</td>`;
+      }
+      h += `<tr><td><div class="who2">${esc(p.name || '—')}<small>${esc(p.email)}</small></div></td><td>${role}</td><td><span class="st ${p.status}">${p.status==='active'?'Active':'Invited'}</span></td>${prog}<td class="r">${mm?`<button class="btn sm danger" type="button" data-act="removeMember" data-email="${esc(p.email)}">Remove</button>`:''}</td></tr>`;
+    });
+    h += `</tbody></table></div>`;
+  }
+  h += `</div>`;
+  // progress matrix
+  if (can(u,'viewProgress',g) && members.some(p=>p.status==='active')){
+    const lessons = DB.catalog.filter(i=>i.type==='lesson' && i.status==='published');
+    h += `<div class="sec"><h3>Lesson progress<small>✓ opened · number = quiz score out of 5 · blank = not in their access</small></h3><div class="tblwrap"><table class="tbl"><thead><tr><th>Person</th>${lessons.map(l=>`<th class="c">${l.id.toUpperCase()}</th>`).join('')}</tr></thead><tbody>`;
+    members.filter(p=>p.status==='active').forEach(p => {
+      const pr = progressFor(p.email);
+      h += `<tr><td>${esc(nameOf(p))}</td>${lessons.map(l => {
+        if (!canOpen(p,l)) return `<td class="c cell-no">·</td>`;
+        const x = pr[l.id] || {};
+        return `<td class="c">${x.opened ? `<span class="cell-ok">✓${x.quiz!=null?' '+x.quiz:''}</span>` : '<span class="cell-no">–</span>'}</td>`;
+      }).join('')}</tr>`;
+    });
+    h += `</tbody></table></div></div>`;
+  }
+  return h + `</div>`;
+}
+
+/* ---- Requests ---- */
+function viewRequests(u){
+  const open = DB.requests.filter(r=>!r.done), done = DB.requests.filter(r=>r.done);
+  const card = r => `<div class="panel pad stack"><div class="row" style="justify-content:space-between"><div><h3>${esc(r.company)}</h3><span class="small muted">${esc(r.contact)} · ${esc(r.email)} · team ${esc(r.size)} · ${esc(r.date)}</span></div>
+    ${r.done ? '<span class="st active">Group created</span>' : `<div class="row"><button class="btn sm primary" type="button" data-act="reqToGroup" data-id="${r.id}">Create group and invite ${esc(r.contact)}</button><button class="btn sm" type="button" data-act="reqDismiss" data-id="${r.id}">Dismiss</button></div>`}</div>
+    ${r.note ? `<p style="margin:0">${esc(r.note)}</p>` : ''}</div>`;
+  return `<div class="pagehead"><div><h2>Access requests</h2><p>Companies that asked for access from the landing page. Creating a group invites the contact as Student Full Access; change their access or add teammates in the group.</p></div></div>
+    <div class="stack">${open.map(card).join('') || '<div class="empty">No open requests.</div>'}
+    ${done.length ? `<h3 style="margin-top:10px">Handled</h3>${done.map(card).join('')}` : ''}</div>`;
+}
+
+/* ---- Staff (Owner & Owner-Contributors) ---- */
+function viewStaff(u){
+  const staff = DB.people.filter(p => ROLES[p.role].staff);
+  const owner = staff.find(p => p.role === 'owner');
+  let h = `<div class="pagehead"><div><h2>Owner &amp; Owner-Contributors</h2><p>The people who run the site. Only the Owner can add Admins or hand over ownership.</p></div></div><div class="panel pad stack">`;
+  h += `<div class="row" style="justify-content:space-between"><div><span class="small muted">Site owner</span><div><b style="font-weight:500">${esc(nameOf(owner))}</b> <span class="small muted">${esc(owner.email)}</span></div></div>`;
+  if (can(u,'transferOwner')){
+    const admins = staff.filter(p => p.role==='admin' && p.status==='active');
+    if (admins.length){
+      const armed = UI.confirm && UI.confirm.startsWith('own:');
+      h += `<div class="row"><select id="ownSel" aria-label="New owner">${admins.map(p=>`<option value="${esc(p.email)}">${esc(nameOf(p))}</option>`).join('')}</select><button class="btn sm danger" type="button" data-act="transfer">${armed?'Click again to hand over ownership':'Make owner'}</button></div>`;
+    }
+  }
+  h += `</div>`;
+  const inviteRoles = ['admin','creator','instructor'].filter(r => can(u,'inviteStaffAs',r));
+  if (inviteRoles.length){
+    h += `<div class="sec"><h3>Invite a contributor</h3><form class="row" id="fStaff" novalidate><input type="email" id="stEmail" placeholder="name@yourcompany.com" aria-label="Email to invite" style="flex:1;min-width:200px"><select id="stRole" aria-label="Role">${inviteRoles.map(r=>`<option value="${r}">${ROLES[r].label}</option>`).join('')}</select><button class="btn primary" type="submit">Invite</button></form></div>`;
+  }
+  h += `<div class="sec"><div class="tblwrap"><table class="tbl"><thead><tr><th>Person</th><th>Role</th><th>Status</th><th>Groups taught</th><th></th></tr></thead><tbody>`;
+  staff.forEach(p => {
+    const editable = can(u,'manageStaff',p) && p.email !== u.email;
+    const opts = ['admin','creator','instructor'].filter(r => r === p.role || can(u,'inviteStaffAs',r));
+    const role = editable ? `<select data-act="staffRole" data-email="${esc(p.email)}" aria-label="Role for ${esc(p.email)}">${opts.map(r=>`<option value="${r}" ${p.role===r?'selected':''}>${ROLES[r].label}</option>`).join('')}</select>` : ROLES[p.role].label;
+    const taught = DB.groups.filter(g => g.instructors.includes(p.email)).map(g=>esc(g.name)).join(', ') || '<span class="muted">—</span>';
+    h += `<tr><td><div class="who2">${esc(p.name || '—')}<small>${esc(p.email)}</small></div></td><td>${role}</td><td><span class="st ${p.status}">${p.status==='active'?'Active':'Invited'}</span></td><td class="small">${taught}</td><td class="r">${editable?`<button class="btn sm danger" type="button" data-act="removeStaff" data-email="${esc(p.email)}">Remove</button>`:''}</td></tr>`;
+  });
+  return h + `</tbody></table></div></div></div>`;
+}
+
+/* ---- Content ---- */
+function viewContent(u){
+  if (!DB.catalog.length && can(u,'editContent')){
+    return `<div class="pagehead"><div><h2>Content</h2><p>The site has no lessons, tools or problems yet.</p></div></div>
+      <div class="panel pad stack"><p style="margin:0">Load the starter list: Lessons 01 and 02, the two stack-up tools and four sample problems, all as drafts. Then upload each lesson's .html page and publish it.</p>
+      <div class="row"><button class="btn primary" type="button" data-act="starter">Load starter content</button></div></div>`;
+  }
+  let h = `<div class="pagehead"><div><h2>Content</h2><p>Lessons, tools and practice problems on the site. Drafts are visible to content staff only; publish to make them available to students whose access includes them. Problems are built in the Problem creator.</p></div></div><div class="panel pad stack">`;
+  h += `<div class="tblwrap"><table class="tbl"><thead><tr><th>ID</th><th>Title</th><th>Type</th><th>Status</th><th>Page</th><th class="r">Groups with Partial access</th></tr></thead><tbody>`;
+  DB.catalog.forEach(it => {
+    const n = DB.groups.filter(g=>g.allowed.includes(it.id)).length;
+    h += `<tr><td class="mono small">${it.id.toUpperCase()}</td><td><input type="text" value="${esc(it.title)}" data-act="title" data-id="${it.id}" aria-label="Title for ${it.id}" style="width:100%"></td><td>${TYPE_LABEL[it.type]}</td>
+      <td><select data-act="status" data-id="${it.id}" aria-label="Status for ${it.id}"><option value="draft" ${it.status==='draft'?'selected':''}>Draft</option><option value="published" ${it.status==='published'?'selected':''}>Published</option></select></td>
+      <td class="small">${it.type === 'problem' ? '<span class="muted">built in</span>' : `<label class="btn sm upl">${it.page ? 'Replace' : 'Upload'} .html<input type="file" accept=".html,.htm,text/html" data-act="upload" data-id="${it.id}"></label> <span class="muted">${esc(it.page || 'none')}</span>`}</td><td class="r mono small">${n}</td></tr>`;
+  });
+  h += `</tbody></table></div>`;
+  h += `<div class="sec"><h3>Add an item</h3><form class="row" id="fItem" novalidate><input type="text" id="itTitle" placeholder="Title" aria-label="New item title" style="flex:2;min-width:200px"><select id="itType" aria-label="Type"><option value="lesson">3D lesson</option><option value="tool">Tool</option></select><input type="text" id="itDesc" placeholder="One-line description" aria-label="Description" style="flex:3;min-width:200px"><button class="btn primary" type="submit">Add as draft</button></form></div>`;
+  return h + `</div>`;
+}
+
+/* ---- Roles matrix ---- */
+function viewRoles(u){
+  const cols = ['owner','admin','creator','instructor','student_full','student_partial'];
+  const Y = '<span class="yes" aria-label="yes">✓</span>', N = '<span class="no" aria-label="no">–</span>', P = t => `<span class="part">${t}</span>`;
+  const rows = [
+    ['Open published lessons and tools', [Y,Y,Y,Y,Y,P('group list')]],
+    ['See and edit drafts, add content', [Y,Y,Y,N,N,N]],
+    ['Problem creator: build parts, assign GD&T, write graded problems', [Y,Y,Y,N,N,N]],
+    ['See groups', [Y,Y,Y,P('assigned'),N,N]],
+    ['See student progress', [Y,Y,Y,P('assigned'),P('own'),P('own')]],
+    ['Create groups, handle access requests', [Y,Y,Y,N,N,N]],
+    ['Invite students, set Full/Partial, remove', [Y,Y,Y,N,N,N]],
+    ['Choose what Partial includes per group', [Y,Y,Y,N,N,N]],
+    ['Assign instructors to groups', [Y,Y,Y,N,N,N]],
+    ['Delete a group', [Y,Y,N,N,N,N]],
+    ['Invite Creator-Instructors and Instructors', [Y,Y,N,N,N,N]],
+    ['Invite Admins', [Y,N,N,N,N,N]],
+    ['Hand over site ownership', [Y,N,N,N,N,N]]
+  ];
+  let h = `<div class="pagehead"><div><h2>Roles &amp; permissions</h2><p>What each role can do. The live site enforces this in the Firebase security rules, not just by hiding buttons.</p></div></div><div class="panel pad"><div class="tblwrap"><table class="tbl matrix"><thead><tr><th>Can…</th>${cols.map(c=>`<th class="c">${ROLES[c].label}</th>`).join('')}</tr></thead><tbody>`;
+  rows.forEach(([t,v]) => h += `<tr><td>${t}</td>${v.map(x=>`<td class="c">${x}</td>`).join('')}</tr>`);
+  h += `</tbody></table></div><p class="small muted" style="margin:10px 0 0">Assumptions to confirm: Instructors don't invite or change access; Admins can edit content; only the Owner and Admins can delete a group.</p></div>`;
+  return h;
+}
+
+/* ===================== Render ===================== */
+function render(){
+  renderWho();
+  const u = me();
+  $('main').innerHTML = (u && u.status === 'active') ? renderApp(u) : renderLanding();
+  if (!u) return;
+  if (u && u.status === 'active' && document.getElementById('viewerSlot')){
+    let P = UI.tab === 'creator' && UI.pc.draft ? UI.pc.draft.problem : UI.tab === 'play' ? (UI.play.preview ? UI.pc.draft : item(UI.play.id)).problem : null;
+    if (P && UI.tab === 'play' && P.shape === 'stack' && UI.play.ans.orient) P = Object.assign({}, P, {dims: Object.assign({}, P.dims, {orient: UI.play.ans.orient})});
+    if (P) mountViewer(P, {ctx: UI.tab === 'creator' ? 'c' + (UI.pc.draft.id||'new') : 'p' + (UI.play.preview ? 'prev' : UI.play.id), reframe: UI.reframe}); UI.reframe = false;
+  }
+}
+
+/* ===================== Actions ===================== */
+function act(fn, msg){ fn(); save(); render(); if (msg) toast(msg); }
+function emailTaken(e){ return !!person(e); }
+
+document.addEventListener('submit', ev => {
+  const f = ev.target; ev.preventDefault();
+  const u = me();
+  if (f.id === 'fSignin'){
+    const e = norm($('siEmail').value); UI.signupEmail = e;
+    if (!isEmail(e)){ UI.landingMsg = {kind:'err', text:'Enter a full email address, like name@company.com.'}; return render(); }
+    UI.landingMsg = {kind:'info', text:'Sending…'}; render();
+    sendSignInLinkToEmail(auth, e, {url: location.origin + location.pathname, handleCodeInApp: true})
+      .then(() => { try { localStorage.setItem(EMAIL_KEY, e); } catch(x){} UI.landingMsg = {kind:'ok', text:`Check <b>${esc(e)}</b> for a sign-in link from Firebase and open it in this browser. If your email isn't on the invitation list yet, the link won't let you in. Look in spam if it doesn't arrive in a few minutes.`}; render(); })
+      .catch(err => { UI.landingMsg = {kind:'err', text:'Could not send the link: ' + esc(err.code || err.message)}; render(); });
+    return;
+  }
+  if (f.id === 'fConfirm'){
+    const e = norm($('cfEmail').value); if (!isEmail(e)) return;
+    UI.signupStep = null; AUTH.state = 'loading'; render();
+    signInWithEmailLink(auth, e, location.href).then(() => history.replaceState(null, '', location.pathname))
+      .catch(err => { AUTH.state = 'out'; UI.landingMsg = {kind:'err', text:'That link didn\u2019t work (' + esc(err.code) + '). Links expire and can be used once. Request a new one.'}; render(); });
+    return;
+  }
+  if (f.id === 'fName'){
+    const n = $('suName').value.trim(); if (!n) return;
+    const email = AUTH.user.email.toLowerCase();
+    setDoc(doc(fdb, 'people', email), {name: n, status: 'active'}, {merge: true})
+      .then(() => { toast(`Welcome, ${n}.`); return afterSignIn(AUTH.user); })
+      .catch(err => toast('Could not finish sign-up: ' + (err.code || err.message)));
+    return;
+  }
+  if (f.id === 'fReq'){
+    const co = $('rqCo').value.trim(), nm = $('rqName').value.trim(), e = norm($('rqEmail').value);
+    if (!co || !nm || !isEmail(e)){ UI.reqMsg = {kind:'err', text:'Fill in company, your name and a full work email.'}; return render(); }
+    addDoc(collection(fdb, 'requests'), {company:co, contact:nm, email:e, size:$('rqSize').value, note:$('rqNote').value.trim().slice(0,2000), date:today(), done:false})
+      .then(() => { UI.reqMsg = {kind:'ok', text:`Thanks, ${esc(nm)}. Your request for ${esc(co)} was sent. We'll be in touch at ${esc(e)}.`}; render(); })
+      .catch(err => { UI.reqMsg = {kind:'err', text:'Could not send the request: ' + esc(err.code || err.message)}; render(); });
+    return;
+  }
+  if (f.id === 'fNewGroup' && can(u,'createGroup')){
+    const n = $('ngName').value.trim(); if (!n) return;
+    const id = 'g' + Date.now();
+    return act(() => { DB.groups.push({id, name:n, allowed:[], instructors:[], created:today(), createdBy:u.email}); UI.group = id; }, `Group "${n}" created. Next: pick what Partial includes and invite people.`);
+  }
+  if (f.id === 'fInvite' && can(u,'manageMembers')){
+    const e = norm($('invEmail').value);
+    if (!isEmail(e)) return toast('Enter a full email address.');
+    if (emailTaken(e)) return toast(`${e} is already on the site.`);
+    const role = $('invRole').value;
+    return act(() => DB.people.push({email:e, name:'', role, status:'invited', group:UI.group, invitedBy:u.email, invitedAt:today()}), `Added ${e} as ${ROLES[role].label}. Send them the site link to sign in.`);
+  }
+  if (f.id === 'fStaff'){
+    const e = norm($('stEmail').value), role = $('stRole').value;
+    if (!can(u,'inviteStaffAs',role)) return;
+    if (!isEmail(e)) return toast('Enter a full email address.');
+    if (emailTaken(e)) return toast(`${e} is already on the site.`);
+    return act(() => DB.people.push({email:e, name:'', role, status:'invited', group:null, invitedBy:u.email, invitedAt:today()}), `Added ${e} as ${ROLES[role].label}. Send them the site link to sign in.`);
+  }
+  if (f.id === 'fNewProblem' && can(u,'createProblems')){
+    const shape = $('npShape').value, n = DB.catalog.filter(i => i.type === 'problem').length + 1;
+    let id = 'p' + String(n).padStart(2,'0'); while (item(id)) id = 'p' + String(Math.floor(Math.random()*900+100));
+    UI.pc = {draft: {id, type:'problem', title:'', desc:'', status:'draft', problem: template(shape)}, isNew:true}; UI.reframe = true; return render();
+  }
+  if (f.id === 'fPlay'){
+    const it = UI.play.preview ? UI.pc.draft : item(UI.play.id); if (!it) return;
+    const res = grade(it.problem, UI.play.ans); UI.play.result = res;
+    if (!UI.play.preview){ return act(() => { const pr = DB.progress[u.email] = DB.progress[u.email] || {}; const prev = (pr[it.id] || {}).score; pr[it.id] = Object.assign({}, pr[it.id], {opened:true, score: prev == null ? res.score : Math.max(prev, res.score)}); }); }
+    return render();
+  }
+  if (f.id === 'fItem' && can(u,'editContent')){
+    const t = $('itTitle').value.trim(); if (!t) return toast('Give the item a title.');
+    const type = $('itType').value, pre = type==='lesson' ? 'l' : 't';
+    const n = DB.catalog.filter(i=>i.type===type).length + 1;
+    let id = pre + String(n).padStart(2,'0'); while (item(id)) id = pre + String(Math.floor(Math.random()*90+10));
+    return act(() => DB.catalog.push({id, type, title:t, desc:$('itDesc').value.trim(), status:'draft'}), `Added "${t}" as a draft.`);
+  }
+});
+
+document.addEventListener('click', ev => {
+  const b = ev.target.closest('[data-tab],[data-group],[data-act]');
+  if (!b || b.tagName === 'SELECT' || (b.tagName === 'INPUT')) return;
+  const u = me();
+  if (b.dataset.tab){ UI.tab = b.dataset.tab; UI.confirm = null; return render(); }
+  if (b.dataset.group){ UI.group = b.dataset.group; UI.confirm = null; return render(); }
+  const a = b.dataset.act, id = b.dataset.id, email = b.dataset.email;
+  if (a === 'signout'){ UI.signupEmail = ''; UI.landingMsg = null; UI.signupStep = null; signOut(auth).then(() => toast('Signed out.')); return; }
+  if (a === 'closeViewer'){ return closeViewer(); }
+  if (a === 'starter' && can(u,'editContent')){ return act(() => { DB.catalog = starterCatalog(); }, 'Starter content loaded as drafts. Upload each lesson page, then publish.'); }
+  if (a === 'play'){ const it = item(id); if (!canOpen(u,it)) return; UI.play = {id, preview:false, ans: blankAns(it.problem), result:null}; UI.tab = 'play'; UI.reframe = true;
+    return act(() => { const pr = DB.progress[u.email] = DB.progress[u.email] || {}; pr[id] = Object.assign({}, pr[id], {opened:true}); }); }
+  if (a === 'playBack'){ if (UI.play.preview){ UI.tab = 'creator'; } else { UI.tab = 'problems'; } UI.play.result = null; UI.reframe = true; return render(); }
+  if (a === 'viewReset'){ if (VIEW.box) { frameView(); resizeViewer(); } return; }
+  if (a === 'pcEdit' && can(u,'createProblems')){ UI.pc = {draft: clone(item(id)), isNew:false}; UI.confirm = null; UI.reframe = true; return render(); }
+  if (a === 'pcBack'){ UI.pc = {draft:null, isNew:false}; UI.confirm = null; return render(); }
+  if (a === 'pcPreview' && UI.pc.draft){ UI.play = {id: UI.pc.draft.id, preview:true, ans: blankAns(UI.pc.draft.problem), result:null}; UI.tab = 'play'; UI.reframe = true; return render(); }
+  if (a === 'wsAdd'){ UI.play.ans.ws.push(wsRow()); return render(); }
+  if (a === 'wsOrient'){ UI.play.ans.orient = b.dataset.v; return render(); }
+  if (a === 'wsFmt'){ const to = b.dataset.v; if (UI.play.ans.fmt !== to){ UI.play.ans.ws = wsConvert(UI.play.ans.ws, to); UI.play.ans.fmt = to; } return render(); }
+  if (a === 'wsClear'){ const f = UI.play.ans.fmt; UI.play.ans = blankAns({ptype:'stack'}); UI.play.ans.fmt = f; UI.play.result = null; return render(); }
+  if (a === 'pcSave' && can(u,'createProblems') && UI.pc.draft){
+    const d = UI.pc.draft; if (!d.title.trim()) return toast('Give the problem a title.');
+    return act(() => { const i = DB.catalog.findIndex(x => x.id === d.id); if (i >= 0) DB.catalog[i] = clone(d); else DB.catalog.push(clone(d)); UI.pc = {draft:null, isNew:false}; }, `Saved ${d.id.toUpperCase()} "${d.title}"${d.status === 'published' ? ' (published)' : ' as a draft'}.`);
+  }
+  if (a === 'pcDelete' && can(u,'createProblems') && UI.pc.draft){
+    if (UI.confirm !== 'pdel'){ UI.confirm = 'pdel'; return render(); }
+    const d = UI.pc.draft;
+    return act(() => { DB.catalog = DB.catalog.filter(x => x.id !== d.id); DB.groups.forEach(g => g.allowed = g.allowed.filter(x => x !== d.id)); UI.pc = {draft:null, isNew:false}; UI.confirm = null; }, `Deleted ${d.id.toUpperCase()}.`);
+  }
+  if (a === 'pcFeatAdd' && UI.pc.draft){ const P = UI.pc.draft.problem; P.features.push(newFeature(P, $('pcKind').value)); return render(); }
+  if (a === 'pcFeatDel' && UI.pc.draft){ const P = UI.pc.draft.problem, f = P.features[+b.dataset.i]; P.features.splice(+b.dataset.i, 1);
+    Object.keys(P.datums).forEach(L => { if (P.datums[L] === 'feat:' + f.id) P.datums[L] = ''; }); return render(); }
+  if (a === 'pcRowAdd' && UI.pc.draft){ UI.pc.draft.problem.dims.chain.push({name:'New item', nom:.5, up:.002, lo:-.002, dir:'-'}); return render(); }
+  if (a === 'pcRowDel' && UI.pc.draft){ UI.pc.draft.problem.dims.chain.splice(+b.dataset.i, 1); return render(); }
+  if (a === 'open'){
+    const it = item(id); if (!canOpen(u, it)) return;
+    act(() => { const pr = DB.progress[u.email] = DB.progress[u.email] || {}; pr[id] = Object.assign({}, pr[id], {opened:true}); });
+    return openItem(u, it);
+  }
+  if (a === 'assign' && can(u,'assignInstructors')){
+    const e = $('asgSel').value, g = groupById(UI.group);
+    return act(() => g.instructors.push(e), `${nameOf(person(e))} now teaches ${g.name}.`);
+  }
+  if (a === 'unassign' && can(u,'assignInstructors')){
+    const g = groupById(UI.group);
+    return act(() => g.instructors = g.instructors.filter(x=>x!==email), 'Instructor removed from the group.');
+  }
+  if (a === 'removeMember' && can(u,'manageMembers')){
+    return act(() => { DB.people = DB.people.filter(p=>p.email!==email); delete DB.progress[email]; }, `${email} removed.`);
+  }
+  if (a === 'delGroup' && can(u,'deleteGroup')){
+    if (UI.confirm !== 'del:'+id){ UI.confirm = 'del:'+id; return render(); }
+    const g = groupById(id);
+    return act(() => { DB.people.filter(p=>p.group===id).forEach(p=>delete DB.progress[p.email]); DB.people = DB.people.filter(p=>p.group!==id); DB.groups = DB.groups.filter(x=>x.id!==id); UI.confirm = null; UI.group = null; }, `Group "${g.name}" deleted.`);
+  }
+  if (a === 'removeStaff'){
+    const p = person(email); if (!can(u,'manageStaff',p)) return;
+    return act(() => { DB.people = DB.people.filter(x=>x.email!==email); DB.groups.forEach(g => g.instructors = g.instructors.filter(x=>x!==email)); }, `${email} removed.`);
+  }
+  if (a === 'transfer' && can(u,'transferOwner')){
+    const e = $('ownSel').value;
+    if (UI.confirm !== 'own:'+e){ UI.confirm = 'own:'+e; return render(); }
+    const np = person(e); UI.confirm = null;
+    const b = writeBatch(fdb);
+    b.update(doc(fdb, 'site', 'config'), {ownerEmail: e});
+    b.update(doc(fdb, 'people', e), {role: 'owner'});
+    b.update(doc(fdb, 'people', u.email), {role: 'admin'});
+    b.commit().then(() => { toast(`${nameOf(np)} is now the site owner. You're an Admin.`); return loadAll().then(render); })
+      .catch(err => toast('Hand-over refused: ' + (err.code || err.message)));
+    return;
+  }
+  if (a === 'reqToGroup' && can(u,'viewRequests')){
+    const r = DB.requests.find(x=>x.id===id);
+    const gid = 'g' + Date.now();
+    return act(() => {
+      DB.groups.push({id:gid, name:r.company, allowed:[], instructors:[], created:today(), createdBy:u.email});
+      if (!emailTaken(r.email)) DB.people.push({email:r.email, name:r.contact, role:'student_full', status:'invited', group:gid, invitedBy:u.email, invitedAt:today()});
+      r.done = true; UI.tab = 'groups'; UI.group = gid;
+    }, `Group "${r.company}" created and ${r.email} invited.`);
+  }
+  if (a === 'reqDismiss' && can(u,'viewRequests')){
+    return act(() => DB.requests = DB.requests.filter(x=>x.id!==id), 'Request dismissed.');
+  }
+});
+
+const WS_ROWS = 8;
+function wsRow(){ return {step:'', name:'', dir:'+', nom:'', up:'', lo:'', max:'', min:''}; }
+/* Limit form: each row's max and min are signed values from the origin. Max gap = Σmax, min gap = Σmin, tol = Σ|max − min|. */
+function evalLimit(ws){ let maxGap = 0, minGap = 0, tol = 0;
+  ws.forEach(w => { if (!(w.name || +w.max || +w.min)) return; const mx = +w.max || 0, mn = +w.min || 0; maxGap += Math.max(mx,mn); minGap += Math.min(mx,mn); tol += Math.abs(mx - mn); });
+  return {maxGap, minGap, tol, mean:(maxGap+minGap)/2, wc:tol/2}; }
+/* Convert between the two entry formats without losing what's typed */
+function wsConvert(ws, to){
+  return ws.map(w => { const o = Object.assign(wsRow(), w);
+    if (to === 'limit'){ if (w.nom !== '' || w.up !== '' || w.lo !== ''){ const sgn = w.dir === '-' ? -1 : 1, n = +w.nom || 0, U = +w.up || 0, Lo = +w.lo || 0;
+        const hi = sgn*(n+U), lo = sgn*(n+Lo); o.max = String(+Math.max(hi,lo).toFixed(5)); o.min = String(+Math.min(hi,lo).toFixed(5)); } }
+    else { if (w.max !== '' || w.min !== ''){ const mx = +w.max || 0, mn = +w.min || 0, mid = (mx+mn)/2, half = Math.abs(mx-mn)/2;
+        o.dir = mid < 0 ? '-' : '+'; o.nom = String(+Math.abs(mid).toFixed(5)); o.up = String(+half.toFixed(5)); o.lo = String(+(-half).toFixed(5)); } }
+    return o; });
+}
+function blankAns(P){ return P && P.ptype === 'stack' ? {val:'', fmt:'nominal', orient: (P.dims && P.dims.orient) || 'v', ws: Array.from({length: WS_ROWS}, wsRow)} : {}; }
+function readField(el){ const k = el.dataset.kind; if (k === 'bool') return el.checked; if (k === 'num'){ const v = parseFloat(el.value); return isNaN(v) ? 0 : v; } return el.value; }
+function liveWs(){
+  const ws = UI.play.ans.ws, tb = document.querySelector('table.ws tbody'); if (!tb) return;
+  let used = 0;
+  if (UI.play.ans.fmt === 'limit'){
+    ws.forEach((w,i) => { const tr = tb.rows[i]; if (!tr) return; const live = w.name || +w.max || +w.min; if (live) used++; tr.cells[4].textContent = live ? fmt(Math.abs((+w.max||0) - (+w.min||0))) : ''; });
+    const r = evalLimit(ws), tf = document.querySelectorAll('table.ws tfoot tr');
+    if (tf.length === 2){ [[tf[0],[fmt(r.maxGap),fmt(r.minGap),fmt(r.tol)]],[tf[1],[fmt(r.maxGap),fmt(r.minGap),'±'+fmt(r.tol/2)]]].forEach(([row,v]) => { row.cells[1].textContent = used ? v[0] : ''; row.cells[2].textContent = used ? v[1] : ''; row.cells[3].textContent = used ? v[2] : ''; }); }
+    return;
+  } ws.forEach((w,i) => { const tr = tb.rows[i]; if (!tr) return; const U = +w.up || 0, Lo = +w.lo || 0, live = w.name || +w.nom; if (live) used++;
+    tr.cells[6].textContent = live ? fmt((+w.nom || 0) + (U+Lo)/2) : ''; tr.cells[7].textContent = live ? fmt(Math.abs((U-Lo)/2)) : ''; });
+  const r = evalStack(ws.filter(w => w.name || +w.nom)), tf = document.querySelector('table.ws tfoot tr');
+  if (tf){ tf.cells[1].textContent = used ? fmt(r.mean) : ''; tf.cells[2].textContent = used ? `±${fmt(r.wc)} · ±${fmt(r.rss)}` : ''; }
+}
+function rebindFocus(id){ const el = document.getElementById(id); if (el && el.tagName === 'INPUT' && el.type === 'text'){ el.focus(); const n = el.value.length; try { el.setSelectionRange(n, n); } catch(e){} } }
+document.addEventListener('input', ev => {
+  const el = ev.target;
+  if (el.dataset.ws){ const [i,k] = el.dataset.ws.split('.'); const row = UI.play.ans.ws[+i]; if (row){ row[k] = el.value; if (el.tagName === 'INPUT'){ liveWs(); return; } } }
+  if (el.dataset.bind && UI.pc.draft){ setPath(UI.pc.draft, el.dataset.bind, readField(el)); if (el.tagName === 'INPUT' && el.type === 'text' && el.dataset.kind !== 'num'){ /* text: wait for change */ return; } }
+  if (el.dataset.ans){ const a = UI.play.ans, k = el.dataset.ans; if (k.startsWith('e.')){ a.e = a.e || {}; a.e[k.slice(2)] = el.checked; } else a[k] = readField(el); }
+});
+document.addEventListener('change', ev => {
+  const el = ev.target, u = me();
+  if (el.dataset.ws){ const [i,k] = el.dataset.ws.split('.'); const row = UI.play.ans.ws[+i]; if (row) row[k] = el.value; render(); rebindFocus(el.id); return; }
+  if (el.dataset.bind && UI.pc.draft){ setPath(UI.pc.draft, el.dataset.bind, readField(el)); render(); rebindFocus(el.id); return; }
+  if (el.dataset.ans){ const a = UI.play.ans, k = el.dataset.ans; if (k.startsWith('e.')){ a.e = a.e || {}; a.e[k.slice(2)] = el.checked; } else a[k] = readField(el); if (el.tagName === 'SELECT' || el.type === 'checkbox'){ render(); } return; }
+  if (a0(el) === 'upload'){ const it = item(el.dataset.id); if (it && can(u,'editContent')) uploadPage(it, el.files[0]); el.value = ''; return; }
+  const a = el.dataset.act, id = el.dataset.id, email = el.dataset.email;
+  if (a === 'quiz'){ return act(() => { const pr = DB.progress[u.email] = DB.progress[u.email] || {}; pr[id] = Object.assign({}, pr[id], {quiz: el.value === '' ? undefined : +el.value}); if (el.value==='') delete pr[id].quiz; }, 'Quiz score saved.'); }
+  if (a === 'feature' && can(u,'editFeatures')){
+    const g = groupById(UI.group);
+    return act(() => { g.allowed = el.checked ? g.allowed.concat(id) : g.allowed.filter(x=>x!==id); }, `${item(id).title} ${el.checked?'added to':'removed from'} Partial access for ${g.name}.`);
+  }
+  if (a === 'memberRole' && can(u,'manageMembers')){
+    return act(() => person(email).role = el.value, `${email} is now ${ROLES[el.value].label}.`);
+  }
+  if (a === 'staffRole'){
+    const p = person(email); if (!can(u,'manageStaff',p) || !can(u,'inviteStaffAs',el.value)) return render();
+    return act(() => { p.role = el.value; if (!['instructor','creator'].includes(el.value)) DB.groups.forEach(g => g.instructors = g.instructors.filter(x=>x!==email)); }, `${email} is now ${ROLES[el.value].label}.`);
+  }
+  if (a === 'title' && can(u,'editContent')){ const v = el.value.trim(); if (!v) return render(); return act(() => item(id).title = v, 'Title saved.'); }
+  if (a === 'status' && can(u,'editContent')){ return act(() => item(id).status = el.value, `${item(id).title} is now ${el.value === 'published' ? 'published' : 'a draft'}.`); }
+});
+
+function a0(el){ return el.dataset ? el.dataset.act : null; }
+document.addEventListener('keydown', ev => { if (ev.key === 'Escape' && !$('viewer').hidden) closeViewer(); });
+
+/* expose pure logic for testing */
+window.__access = {can, canOpen, ROLES, evalStack, evalAccept, checkFCF, grade, template, sampleProblems};
+
+// ---- start-up: finish an email-link sign-in if this page was opened from one, then follow auth state ----
+if (isSignInWithEmailLink(auth, location.href)){
+  let e = null; try { e = localStorage.getItem(EMAIL_KEY); } catch(x){}
+  if (e){
+    signInWithEmailLink(auth, e, location.href)
+      .then(() => { try { localStorage.removeItem(EMAIL_KEY); } catch(x){} history.replaceState(null, '', location.pathname); })
+      .catch(err => { UI.landingMsg = {kind:'err', text:'That link didn\u2019t work (' + esc(err.code) + '). Links expire and can be used once. Request a new one.'}; AUTH = {state:'out', user:null}; render(); });
+  } else { UI.signupStep = 'confirm'; }
+}
+onAuthStateChanged(auth, user => {
+  if (user){ afterSignIn(user); return; }
+  DB = null; SNAP = null; AUTH = {state:'out', user:null};
+  if (UI.signupStep !== 'confirm') UI.signupStep = null;
+  UI.tab = 'learn'; render();
+});
+render();
+})();
+</script>
+</body>
+</html>
