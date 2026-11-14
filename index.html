@@ -940,6 +940,7 @@ const REQUESTS_OPEN = false;
 // Forgot PIN = sign in with an email link again, which asks for a new PIN.
 const isPin = p => /^\d{6}$/.test(p);
 let VIA_LINK = false;   // true when this sign-in came from an email link
+let LINK_PENDING = false;   // page opened from an email link that hasn't been used yet: ignore any older saved sign-in
 const EMAIL_KEY = 'gdtEmailForSignIn';
 const COLS = {people:'email', groups:'id', catalog:'id', requests:'id'};
 let DB = null, SNAP = null, AUTH = {state:'loading', user:null};
@@ -1041,6 +1042,24 @@ function sendLink(){
     .then(() => { try { localStorage.setItem(EMAIL_KEY, e); } catch(x){} UI.landingMsg = {kind:'ok', text:`Check <b>${esc(e)}</b> for a sign-in link from Firebase. Open it in this browser if you can. If you open it somewhere else, the site will ask for your email. The link only works if your email is on the invitation list. Look in spam if it doesn't arrive in a few minutes.`}; render(); })
     .catch(err => { UI.landingMsg = {kind:'err', text:'Could not send the link: ' + esc(err.code || err.message)}; render(); });
 }
+// Use the email link from the address bar. Any older saved sign-in in this browser is replaced.
+function finishLink(email){
+  AUTH = {state:'loading', user:null}; UI.signupStep = null; render();
+  return signInWithEmailLink(auth, email, location.href)
+    .then(cred => {
+      try { localStorage.removeItem(EMAIL_KEY); } catch(x){}
+      history.replaceState(null, '', location.pathname);
+      LINK_PENDING = false; VIA_LINK = true;
+      return afterSignIn(cred.user);
+    })
+    .catch(async err => {
+      LINK_PENDING = false; VIA_LINK = false;
+      history.replaceState(null, '', location.pathname);
+      try { await signOut(auth); } catch(x){}
+      UI.landingMsg = {kind:'err', text:'That link didn\u2019t work (' + esc(err.code || err.message) + '). Links can be used once and expire after a while. Request a new one below and use the newest email.'};
+      AUTH = {state:'out', user:null}; render();
+    });
+}
 // Set the PIN as the account password, then record it on the person's record.
 async function savePin(pin, fields, msg){
   const email = AUTH.user.email.toLowerCase();
@@ -1052,9 +1071,15 @@ async function savePin(pin, fields, msg){
     return afterSignIn(auth.currentUser);
   } catch(err){
     console.error('[gdt] save PIN failed', err);
-    UI.landingMsg = {kind:'err', text: err.code === 'auth/requires-recent-login'
-      ? 'For security, sign in again with a fresh email link, then choose your PIN.'
-      : 'Could not save the PIN (' + esc(err.code || err.message) + ').'};
+    if (err.code === 'auth/requires-recent-login'){
+      // This browser's sign-in is too old to set a PIN. Send a fresh link and sign out.
+      try { await sendSignInLinkToEmail(auth, email, {url: location.origin + location.pathname, handleCodeInApp: true}); localStorage.setItem(EMAIL_KEY, email); } catch(x){}
+      await signOut(auth);
+      UI.signupEmail = email;
+      UI.landingMsg = {kind:'info', text:`Your sign-in in this browser was too old to set a PIN, so we signed you out and emailed a fresh link to <b>${esc(email)}</b>. Open the newest email's link to choose your PIN.`};
+      return render();
+    }
+    UI.landingMsg = {kind:'err', text:'Could not save the PIN (' + esc(err.code || err.message) + ').'};
     render();
   }
 }
@@ -1464,9 +1489,7 @@ document.addEventListener('submit', ev => {
   }
   if (f.id === 'fConfirm'){
     const e = norm($('cfEmail').value); if (!isEmail(e)) return;
-    UI.signupStep = null; AUTH.state = 'loading'; render();
-    signInWithEmailLink(auth, e, location.href).then(() => history.replaceState(null, '', location.pathname))
-      .catch(err => { AUTH.state = 'out'; UI.landingMsg = {kind:'err', text:'That link didn\u2019t work (' + esc(err.code) + '). Links expire and can be used once. Request a new one.'}; render(); });
+    finishLink(e);
     return;
   }
   if (f.id === 'fName'){
@@ -1679,15 +1702,13 @@ window.__access = {can, canOpen, ROLES, evalStack, evalAccept, checkFCF, grade, 
 
 // ---- start-up: finish an email-link sign-in if this page was opened from one, then follow auth state ----
 if (isSignInWithEmailLink(auth, location.href)){
-  VIA_LINK = true;
+  LINK_PENDING = true;
   let e = null; try { e = localStorage.getItem(EMAIL_KEY); } catch(x){}
-  if (e){
-    signInWithEmailLink(auth, e, location.href)
-      .then(() => { try { localStorage.removeItem(EMAIL_KEY); } catch(x){} history.replaceState(null, '', location.pathname); })
-      .catch(err => { VIA_LINK = false; UI.landingMsg = {kind:'err', text:'That link didn\u2019t work (' + esc(err.code) + '). Links expire and can be used once. Request a new one.'}; AUTH = {state:'out', user:null}; render(); });
-  } else { UI.signupStep = 'confirm'; }
+  if (e) finishLink(e);
+  else { UI.signupStep = 'confirm'; AUTH = {state:'out', user:null}; }
 }
 onAuthStateChanged(auth, user => {
+  if (LINK_PENDING) return;            // the email link decides who is signed in, not an older saved session
   if (user){ afterSignIn(user); return; }
   DB = null; SNAP = null; AUTH = {state:'out', user:null};
   if (UI.signupStep !== 'confirm') UI.signupStep = null;
