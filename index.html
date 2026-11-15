@@ -93,6 +93,8 @@ select:disabled{color:var(--muted);background:transparent}
 .msg.ok{border-color:color-mix(in srgb,var(--pass) 35%,var(--line));background:color-mix(in srgb,var(--pass) 7%,transparent)}
 .msg.err{border-color:color-mix(in srgb,var(--fail) 35%,var(--line));background:color-mix(in srgb,var(--fail) 6%,transparent)}
 .msg.info{background:color-mix(in srgb,var(--accent) 5%,transparent)}
+.msg.warn{border-color:color-mix(in srgb,var(--fail) 28%,var(--line));background:color-mix(in srgb,var(--fail) 4%,transparent)}
+.methodnote{display:grid;gap:6px}
 
 /* app shell */
 .app{display:grid;grid-template-columns:210px minmax(0,1fr);gap:20px;padding:22px 0 40px}
@@ -362,6 +364,19 @@ function evalStack(chain, f){
     mean += (c.dir === '-' ? -1 : 1) * m; wc += Math.abs(t); ss += t*t; });
   const rss = Math.sqrt(ss);
   return {mean, wc, rss, mrss: Math.min((+f || 1.5)*rss, wc)};
+}
+// C3: method warnings for RSS / MRSS (verified reference §15.3). Y14.5 sets no stack method and no minimum
+// contributor count; the "fewer than N contributors" threshold is company practice, set per problem (default 4).
+const RSS_MIN_N_DEFAULT = 4;
+function methodNotes(chain, P){
+  const n = (chain || []).filter(c => Math.abs((+c.up || 0) - (+c.lo || 0)) > 1e-12).length;
+  const N = Math.max(1, Math.round(+((P || {}).rssMinN) || RSS_MIN_N_DEFAULT));
+  return {n, N, few: n < N};
+}
+function methodHTML(chain, P){
+  const m = methodNotes(chain, P);
+  return `<div class="methodnote">${m.few ? `<div class="msg warn small"><b>⚠ Few contributors for RSS / MRSS.</b> Only ${m.n} contributor${m.n === 1 ? '' : 's'} carr${m.n === 1 ? 'ies' : 'y'} tolerance. With few contributors, RSS tends to be optimistic: the real spread can be wider than ±RSS. Lean on worst case, or use MRSS with care. <span class="muted">Threshold: fewer than ${m.N}. This is company practice, not a Y14.5 rule.</span></div>` : ''}
+    <p class="small muted" style="margin:0"><b>RSS assumptions:</b> each contributor is centered on its mean, independent of the others, and roughly normal at about ±3σ. Off-center or flat (uniform) processes make RSS under-predict. Y14.5 doesn't set stack methods or a minimum contributor count; these are practice (verified reference §15.3).</p></div>`;
 }
 function limits(f){ const s = f.size; return {lo: s[0] - s[2], hi: s[0] + s[1]}; }
 function mmcOf(f){ const L = limits(f); return FEAT[f.kind].fos === 'int' ? L.lo : L.hi; }
@@ -774,6 +789,7 @@ function ensureStackModel(P){
   P.gap = P.gap || {faceFrom:'', faceTo:''};
   P.req = P.req || {min:'', max:''};
   if (P.mrssF == null) P.mrssF = 1.5;
+  if (P.rssMinN == null) P.rssMinN = RSS_MIN_N_DEFAULT;
   if (P.showLoopBeforeSubmit == null) P.showLoopBeforeSubmit = false;
   P.float = Object.assign({on:false, dir:'-', note:''}, P.float || {});
   if (P.loopShowCount == null) P.loopShowCount = true;
@@ -1036,8 +1052,9 @@ function chainEditor(P){
         <td colspan="6" class="small muted">Gap = To − From along the axis</td></tr></tbody></table></div>
     <p class="small muted" style="margin:0">${SIGN_Q}</p>
     <div class="row"><button class="btn sm" type="button" data-act="pcRowAdd">Add row</button><span class="small muted">Picking faces fills the nominal from the model and suggests the direction. You can override both; the warnings tell you when they disagree with the model.</span></div>
+    ${P.ptype === 'stack' ? methodHTML(P.dims.chain, P) : ''}
     <div class="math">Loop closure: Σ(signed nominals) = ${fmt(cl.sum)}${cl.ok == null ? ' · tag the gap faces to check it against the model' : ` · gap on the model = ${fmt(cl.gap)} · <b>${cl.ok ? 'closes ✓' : 'does NOT close ✗'}</b>`}</div>
-    <div class="row">${inNum('problem.req.min', P.req.min === '' ? null : P.req.min, 'Requirement: min gap', 90)}${inNum('problem.req.max', P.req.max === '' ? null : P.req.max, 'Requirement: max gap', 90)}${inNum('problem.mrssF', P.mrssF, 'MRSS factor f', 70)}
+    <div class="row">${inNum('problem.req.min', P.req.min === '' ? null : P.req.min, 'Requirement: min gap', 90)}${inNum('problem.req.max', P.req.max === '' ? null : P.req.max, 'Requirement: max gap', 90)}${inNum('problem.mrssF', P.mrssF, 'MRSS factor f', 70)}${inNum('problem.rssMinN', P.rssMinN, 'RSS warning below N contributors (company practice)', 60)}
       ${P.ptype === 'loop' ? `<label class="fld" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="${bid('problem.loopShowCount')}" data-bind="problem.loopShowCount" data-kind="bool" ${P.loopShowCount ? 'checked' : ''}> Tell students how many contributors there are</label>`
         : `<label class="fld" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="${bid('problem.showLoopBeforeSubmit')}" data-bind="problem.showLoopBeforeSubmit" data-kind="bool" ${P.showLoopBeforeSubmit ? 'checked' : ''}> Show loop before submit</label>`}</div>
     <span class="small muted">${P.ptype === 'loop' ? 'Students build the chain themselves by picking faces; their own vectors draw live as they go. The key above is hidden until they submit.' : 'Off by default: finding the loop is part of the exercise, so students see the vectors only after they submit.'}</span>
@@ -1066,7 +1083,7 @@ function stackResults(P){
   const f = +P.mrssF || 1.5, r = evalStack(P.dims.chain, f), rq = P.req || {}, lo = parseFloat(rq.min), hi = parseFloat(rq.max);
   const row = (name, half) => { const mn = r.mean - half, mx = r.mean + half; const pass = (isFinite(lo) ? mn >= lo - 1e-9 : true) && (isFinite(hi) ? mx <= hi + 1e-9 : true);
     return {name, half, mn, mx, pass, checked: isFinite(lo) || isFinite(hi)}; };
-  return {r, f, rows: [row('Worst case', r.wc), row('RSS', r.rss), row(`Modified RSS (f = ${f})`, r.mrss)], lo, hi};
+  return {r, f, rows: [row('Worst case', r.wc), row('RSS', r.rss), row(`Modified RSS (f = ${f})`, r.mrss)], lo, hi, method: methodNotes(P.dims.chain, P)};
 }
 function teachHTML(P){
   const chain = P.dims.chain, n = chain.length, F = floatOn(P) ? 1 : 0, step = Math.max(0, Math.min(UI.teach.step, n + 1 + F));
@@ -1082,7 +1099,7 @@ function teachHTML(P){
   if (step > n + F){
     const R = stackResults(P);
     h += `<div class="math">Mean gap = Σ(± means) = <b>${fmt(R.r.mean)}</b>${isFinite(R.lo) || isFinite(R.hi) ? ` · Requirement ${isFinite(R.lo) ? fmt(R.lo) : '—'} to ${isFinite(R.hi) ? fmt(R.hi) : '—'}` : ''}<br>${
-      R.rows.map(x => `${x.name}: ±${f5(x.half)} → ${fmt(x.mn)} to ${fmt(x.mx)}${x.checked ? ` · <b class="${x.pass ? 'okc' : 'failc'}">${x.pass ? 'PASS' : 'FAIL'}</b>` : ''}`).join('<br>')}<br><span class="small">WC = Σ|t| · RSS = √Σt² · MRSS = min(f·RSS, WC)</span></div>`;
+      R.rows.map(x => `${x.name}: ±${f5(x.half)} → ${fmt(x.mn)} to ${fmt(x.mx)}${x.checked ? ` · <b class="${x.pass ? 'okc' : 'failc'}">${x.pass ? 'PASS' : 'FAIL'}</b>` : ''}`).join('<br>')}<br><span class="small">WC = Σ|t| · RSS = √Σt² · MRSS = min(f·RSS, WC)</span></div>` + methodHTML(P.dims.chain, P);
   }
   h += `<div class="teachbar row"><button class="btn sm" type="button" data-act="tBack" ${step === 0 ? 'disabled' : ''}>← Back</button><button class="btn sm primary" type="button" data-act="tNext" ${step > n + F ? 'disabled' : ''}>Next →</button><button class="btn sm" type="button" data-act="tAll">Show all</button><button class="btn sm" type="button" data-act="tReset">Reset</button><span style="flex:1"></span><button class="btn sm" type="button" data-act="tClose">Close</button></div>
     <p class="small muted" style="margin:0">Keyboard: ← / →. Read-only: stepping through doesn't change any score.</p></div>`;
@@ -1303,10 +1320,10 @@ function answerSetup(P){
     return `<div class="math">Answer key (hidden from students): ${P.dims.chain.length} contributors<br>${P.dims.chain.map((c, i) => `${i+1}. ${fn(c.faceFrom)} → ${fn(c.faceTo)} · ${c.dir === '-' ? '−' : '+'} · ${fmt(+c.nom)}`).join('<br>')}<br>Graded: 50% contributors found (a face pair matches in either order; extra rows count against) + 50% signs right. Make sure each dimension has only one sensible face pair.</div>`;
   }
   if (P.ptype === 'stack'){
-    P.ans = P.ans || {}; if (!P.ans.ask) P.ans.ask = 'wcMin'; if (P.ans.tol == null) P.ans.tol = .0005;
+    P.ans = P.ans || {}; if (!P.ans.ask) P.ans.ask = 'wcMin'; if (P.ans.tol == null) P.ans.tol = .0005; if (P.rssMinN == null) P.rssMinN = RSS_MIN_N_DEFAULT;
     const r = evalStack(P.dims.chain, P.mrssF), key = ASK[P.ans.ask][1](r);
-    return `<div class="row">${inSel('problem.ans.ask', P.ans.ask, Object.entries(ASK).map(([k,v]) => [k, v[0]]), 'Ask for')}${inNum('problem.ans.tol', P.ans.tol, 'Grade within ±', 80)}</div>
-      <div class="math">Mean gap = Σ(± mean dims) = ${fmt(r.mean)}<br>WC = Σ|t| = ±${fmt(r.wc)} · RSS = √Σt² = ±${fmt(r.rss)} · MRSS = min(${+P.mrssF || 1.5}·RSS, WC) = ±${fmt(r.mrss)}<br><b>Answer key: ${ASK[P.ans.ask][0]} = ${fmt(key)}</b></div>`;
+    return `<div class="row">${inSel('problem.ans.ask', P.ans.ask, Object.entries(ASK).map(([k,v]) => [k, v[0]]), 'Ask for')}${inNum('problem.ans.tol', P.ans.tol, 'Grade within ±', 80)}${isModelStack(P) ? '' : inNum('problem.rssMinN', P.rssMinN, 'RSS warning below N contributors (company practice)', 60)}</div>
+      <div class="math">Mean gap = Σ(± mean dims) = ${fmt(r.mean)}<br>WC = Σ|t| = ±${fmt(r.wc)} · RSS = √Σt² = ±${fmt(r.rss)} · MRSS = min(${+P.mrssF || 1.5}·RSS, WC) = ±${fmt(r.mrss)}<br><b>Answer key: ${ASK[P.ans.ask][0]} = ${fmt(key)}</b></div>${isModelStack(P) ? '' : methodHTML(P.dims.chain, P)}`;
   }
   if (P.ptype === 'accept'){
     P.ans = P.ans || {}; P.ans.meas = P.ans.meas || {size:0, dx:0, dy:0, dev:0};
@@ -1423,7 +1440,7 @@ function grade(P, a){
   if (P.ptype === 'stack'){
     const key = ASK[P.ans.ask][1](evalStack(P.dims.chain, P.mrssF)), v = parseFloat(a.val), ok = Math.abs(v - key) <= (+P.ans.tol || .0005) + 1e-9;
     const r = evalStack(P.dims.chain, P.mrssF);
-    return {score: ok ? 100 : 0, html: `${ok ? 'Correct.' : 'Not quite.'} ${ASK[P.ans.ask][0]} = ${fmt(key)}.<br><span class="mono small">Mean ${fmt(r.mean)} · WC ±${fmt(r.wc)} · RSS ±${fmt(r.rss)}. Convert unequal tolerances to mean ± equal first: mean = nominal + (upper + lower)/2.</span>`};
+    return {score: ok ? 100 : 0, html: `${ok ? 'Correct.' : 'Not quite.'} ${ASK[P.ans.ask][0]} = ${fmt(key)}.<br><span class="mono small">Mean ${fmt(r.mean)} · WC ±${fmt(r.wc)} · RSS ±${fmt(r.rss)}. Convert unequal tolerances to mean ± equal first: mean = nominal + (upper + lower)/2.</span>${/rss/i.test(P.ans.ask) ? methodHTML(P.dims.chain, P) : ''}`};
   }
   if (P.ptype === 'accept'){
     const r = evalAccept(P), v = parseFloat(a.val);
@@ -2260,7 +2277,7 @@ document.addEventListener('mouseover', ev => {
 });
 
 /* expose pure logic for testing */
-window.__access = {gradeLoop, studentLoopP, signCheck, makeInstance, randValue, randFields, activeRand, whyAfter, keyText, loopSegments, stackFaces, loopClosure, rowWarnings, stackResults, convText, can, canOpen, ROLES, evalStack, evalAccept, checkFCF, grade, template, sampleProblems};
+window.__access = {methodNotes, methodHTML, gradeLoop, studentLoopP, signCheck, makeInstance, randValue, randFields, activeRand, whyAfter, keyText, loopSegments, stackFaces, loopClosure, rowWarnings, stackResults, convText, can, canOpen, ROLES, evalStack, evalAccept, checkFCF, grade, template, sampleProblems};
 
 // ---- start-up: finish an email-link sign-in if this page was opened from one, then follow auth state ----
 if (isSignInWithEmailLink(auth, location.href)){
