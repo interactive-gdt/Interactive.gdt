@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What Changed in Y14.5-2018</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Same calm bench style as the GD&T in 3D lessons. */
+:root{
+  --bg:#f3f4f2;--surface:#fbfbfa;--ink:#232a30;--muted:#606b73;--line:#dfe3e1;--accent:#41627f;--pass:#3f7a5c;--fail:#a2504a;--warn:#8a6a2c;
+  --font-body:"IBM Plex Sans",-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){--bg:#151a1d;--surface:#1b2125;--ink:#dce2e5;--muted:#98a3aa;--line:#2b3338;--accent:#93b1cc;--pass:#7cb294;--fail:#d28c84;--warn:#d1b06d;color-scheme:dark}
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:16px/1.6 var(--font-body)}
+a{color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.wrap{max-width:1180px;margin:0 auto;padding:0 20px}
+.mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.series{border-bottom:1px solid var(--line);background:var(--surface)}
+.series .wrap{display:flex;flex-wrap:wrap;align-items:center;gap:8px 18px;padding-top:10px;padding-bottom:10px}
+.series .brand{font-weight:600;letter-spacing:.02em;font-size:15px;color:var(--ink);text-decoration:none}
+.series nav{display:flex;flex-wrap:wrap;gap:6px}
+.series nav a,.series nav span{font-size:13px;padding:3px 9px;border-radius:999px;border:1px solid var(--line);color:var(--muted);white-space:nowrap;text-decoration:none}
+.series nav a:hover{border-color:var(--accent);color:var(--accent)}
+.series nav .current{border-color:color-mix(in srgb,var(--accent) 45%,var(--line));background:color-mix(in srgb,var(--accent) 8%,transparent);color:var(--accent);font-weight:600}
+header.page{padding:28px 0 18px}
+header.page .no{font:13px var(--font-mono);color:var(--muted)}
+h1,h2,h3{line-height:1.15;margin:0;font-weight:600;text-wrap:balance}
+h1{font-size:clamp(28px,4vw,38px);letter-spacing:-.01em;margin-top:4px}
+h2{font-size:22px}
+h3{font-size:17px}
+.lede{max-width:70ch;color:var(--muted);margin:10px 0 0}
+.bench{display:grid;grid-template-columns:minmax(300px,.9fr) minmax(0,1.3fr);gap:20px;align-items:start}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:12px}
+.pad{padding:16px;display:grid;gap:14px}
+.inputs{position:sticky;top:12px}
+.fld{display:grid;gap:4px}
+.fld label,.fld .lab{font-weight:600;font-size:14px}
+.fld small{color:var(--muted);font-size:12.5px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+input[type=text],select{font:15px var(--font-mono);color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:7px 9px;width:100%}
+input[type=text][aria-invalid="true"]{border-color:var(--fail)}
+.seg{display:inline-flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.seg button{font:500 14px var(--font-body);padding:7px 12px;border:0;background:transparent;color:var(--ink);cursor:pointer}
+.seg button + button{border-left:1px solid var(--line)}
+.seg button[aria-pressed="true"]{background:color-mix(in srgb,var(--accent) 13%,var(--surface));color:var(--accent)}
+.chk{display:flex;gap:8px;align-items:center;font-size:14px}
+.result{display:grid;gap:12px}
+.big{display:flex;flex-wrap:wrap;gap:10px}
+.big .cell{flex:1;min-width:150px;border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--bg)}
+.big .k{font:600 11.5px var(--font-mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.big .v{font:600 20px var(--font-mono);font-variant-numeric:tabular-nums}
+ol.steps{margin:0;padding:0;list-style:none;counter-reset:s;display:grid;gap:8px}
+ol.steps li{counter-increment:s;display:grid;grid-template-columns:28px 1fr;gap:10px;align-items:start}
+ol.steps li::before{content:counter(s);font:500 13px var(--font-mono);width:24px;height:24px;border-radius:50%;border:1px solid color-mix(in srgb,var(--accent) 45%,var(--line));color:var(--accent);display:grid;place-items:center}
+ol.steps .t{font-weight:600;font-size:14.5px}
+ol.steps .m{font:13.5px/1.65 var(--font-mono);color:var(--ink);overflow-x:auto;white-space:nowrap}
+ol.steps .s{font-size:12.5px;color:var(--muted)}
+.badge{display:inline-block;font:600 10.5px var(--font-mono);letter-spacing:.06em;text-transform:uppercase;padding:1px 6px;border-radius:4px;border:1px solid var(--line);color:var(--muted);vertical-align:1px;margin-left:6px}
+.badge.prov{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 40%,var(--line))}
+.badge.sc{color:var(--pass);border-color:color-mix(in srgb,var(--pass) 40%,var(--line))}
+.msg{font-size:14px;border-radius:8px;padding:9px 12px;border:1px solid var(--line)}
+.msg.warn{border-color:color-mix(in srgb,var(--warn) 40%,var(--line));background:color-mix(in srgb,var(--warn) 6%,transparent)}
+.msg.info{background:color-mix(in srgb,var(--accent) 5%,transparent)}
+.msg.err{border-color:color-mix(in srgb,var(--fail) 40%,var(--line));background:color-mix(in srgb,var(--fail) 6%,transparent)}
+table.cmp{width:100%;border-collapse:collapse;font-size:14px}
+table.cmp th,table.cmp td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left}
+table.cmp td.n{font-family:var(--font-mono);text-align:right;white-space:nowrap}
+table.cmp th{font-size:12.5px;color:var(--muted);font-weight:600}
+.copy{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.copy code{font:13.5px var(--font-mono);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 8px;flex:1;min-width:220px;overflow-x:auto;white-space:nowrap}
+.btn{font:500 14px var(--font-body);color:var(--ink);background:transparent;border:1px solid var(--line);border-radius:6px;padding:6px 11px;cursor:pointer}
+.btn:hover{border-color:color-mix(in srgb,var(--accent) 55%,var(--line));color:var(--accent)}
+section.block{margin-top:28px}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}
+.card{padding:18px}
+.card h3{margin-bottom:8px}
+.card p,.card li{font-size:14.5px}
+.card ul{padding-left:18px;margin:6px 0 0;display:grid;gap:6px}
+.refs{font-size:14px;color:var(--muted)}
+footer{margin:36px 0 40px;font-size:13px;color:var(--muted);border-top:1px solid var(--line);padding-top:14px}
+@media (max-width:900px){.bench,.grid2{grid-template-columns:1fr}.inputs{position:static}}
+@media (prefers-reduced-motion: reduce){*{transition:none!important}}
+
+.chg{display:grid;gap:14px;margin-top:14px}
+.ch{padding:16px 18px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px 22px}
+.ch h3{grid-column:1/-1;font-size:17px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.ch .k{font:600 11.5px var(--font-mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:2px}
+.ch p{margin:0;font-size:14.5px}
+.ch .src{grid-column:1/-1;font:12px var(--font-mono);color:var(--muted)}
+.ch.unconf{border-style:dashed}
+.swap{width:100%;border-collapse:collapse;font-size:14.5px;margin-top:10px}
+.swap th,.swap td{padding:8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+.swap th{font-size:12.5px;color:var(--muted);font-weight:600}
+.note{max-width:75ch}
+@media (max-width:760px){.ch{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<div class="series">
+  <div class="wrap">
+    <a class="brand" href="https://claude.ai/artifact/TAVcaqRkGT5HRkRKMRHenT">GD&amp;T in 3D</a>
+    <nav aria-label="Series pages">
+      <a href="https://claude.ai/artifact/TAVcaqRkGT5HRkRKMRHenT">All lessons</a>
+      <a href="https://claude.ai/artifact/8XJoP1yTHmpyk7Bb1M1DFb">03 Tolerance zones</a>
+      <a href="https://claude.ai/artifact/MpL34kEZWP2GBM14XCNKnd">07 Composite position</a>
+      <a href="https://claude.ai/artifact/Tt2KhJYbHMtZYSaQpUKCaK">Tool · Convert a callout</a>
+      <span class="current" aria-current="page">Reference · What changed in 2018</span>
+    </nav>
+  </div>
+</div>
+
+<div class="wrap">
+  <header class="page">
+    <div class="no">Reference · ASME Y14.5-2009 → Y14.5-2018</div>
+    <h1>What changed in Y14.5-2018</h1>
+    <p class="lede">The changes from the 2009 edition that matter for these lessons and for reading drawings on the floor. This page is built from secondary summaries. It is not a complete change list and doesn't replace reading the 2018 standard.</p>
+  </header>
+
+  <div class="panel pad">
+    <div class="msg warn note"><b>Before you cite anything:</b> every section in 2018 was renumbered, though the order of topics stayed the same. A 2009 section number is not a 2018 section number. Section numbers on this page come from secondary sources and haven't been checked against the standard itself.</div>
+    <h2 style="margin-top:4px">The quick swap list</h2>
+    <table class="swap">
+      <thead><tr><th>If a 2009-era drawing or habit uses…</th><th>Under 2018…</th><th>Use instead</th></tr></thead>
+      <tbody>
+        <tr><td>Concentricity ◎ or symmetry ⌯</td><td>Removed: the term, the symbol and the concept</td><td>Position, runout or profile, chosen by function. Position or runout is usually also cheaper to inspect.</td></tr>
+        <tr><td>Profile to refine form only, without also controlling size</td><td>New dynamic profile modifier (a small triangle after the tolerance)</td><td>Dynamic profile, where it's really needed. On a cylinder, cylindricity already does this.</td></tr>
+        <tr><td>Nominal treated as the target</td><td>The as-designed value doesn't set a functional or manufacturing target</td><td>Aim at whatever the process and function need. In stacks, the mean of the limits is a fair working value.</td></tr>
+        <tr><td>2009 section numbers in notes, reports or training</td><td>All renumbered</td><td>Quote 2018 numbers only after checking them in the 2018 book.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <section class="block">
+    <h2>Confirmed changes</h2>
+    <p class="note" style="color:var(--muted);margin:6px 0 0">Source-confirmed from secondary summaries (Mitutoyo, Made to Measure, GD&amp;T Basics, FARO). Fine to teach; the section numbers are still to be checked.</p>
+    <div class="chg">
+      <div class="panel ch"><h3>Concentricity and symmetry removed <span class="badge sc">source-confirmed</span></h3>
+        <div><span class="k">What changed</span><p>Both are gone in 2018: the terms, the symbols and the concept. They were median-point controls, which made them costly to inspect.</p></div>
+        <div><span class="k">What it means for us</span><p>Lessons, problems and the stack workbook use position, runout or profile instead. The site's Problem creator already labels conc/sym as "2009 only", and the error checks flag them. On an older drawing, read them as 2009 controls and ask whether the revision can move to position or runout.</p></div>
+        <p class="src">Verified reference §14.1, §7.2, §7.3 · Mitutoyo slides cite appendix A-8.4 (secondary)</p></div>
+      <div class="panel ch"><h3>Dynamic profile modifier added <span class="badge sc">source-confirmed</span></h3>
+        <div><span class="k">What changed</span><p>A small triangle after the profile tolerance lets profile refine <em>form</em> without also controlling size.</p></div>
+        <div><span class="k">What it means for us</span><p>It's 2018-only, so don't expect it on 2009 drawings. It's rarely needed: on a cylinder, cylindricity already refines form. Mentioned in the profile lesson, not modeled there.</p></div>
+        <p class="src">Verified reference §14.2 · Made to Measure cites ¶11.10–11.11 (secondary)</p></div>
+      <div class="panel ch"><h3>Every section renumbered <span class="badge sc">source-confirmed</span></h3>
+        <div><span class="k">What changed</span><p>The order of topics is unchanged, but all sections have new numbers. The book grew from about 214 to about 326 pages.</p></div>
+        <div><span class="k">What it means for us</span><p>Never quote a 2009 section number as a 2018 number. For example, pattern location (composite and multiple single-segment) is cited as 2018 §10.5, per secondary sources.</p></div>
+        <p class="src">Verified reference §14.3 · Made to Measure, GD&amp;T Basics, FARO (secondary)</p></div>
+      <div class="panel ch"><h3>Nominal isn't a target <span class="badge sc">source-confirmed</span></h3>
+        <div><span class="k">What changed</span><p>A new statement in the general section: the as-designed (nominal) value doesn't set a functional or manufacturing target.</p></div>
+        <div><span class="k">What it means for us</span><p>It backs up how the stack tools work: unequal tolerances become a mean ± equal, and the middle of the limits is no "worse" than the printed nominal. At the machine, aim where the process and the function want, not at the nominal by default.</p></div>
+        <p class="src">Verified reference §14.4 · Mitutoyo cites 4.1(q) (secondary)</p></div>
+      <div class="panel ch"><h3>CF also covers continuous surfaces <span class="badge sc">source-confirmed</span></h3>
+        <div><span class="k">What changed</span><p>The CF (continuous feature) symbol is clarified to apply to continuous surfaces too, not just interrupted features of size.</p></div>
+        <div><span class="k">What it means for us</span><p>Minor. It only matters if a lesson or drawing shows CF.</p></div>
+        <p class="src">Verified reference §14.5 · GD&amp;T Basics (secondary)</p></div>
+      <div class="panel ch"><h3>Otherwise, no major conceptual changes <span class="badge sc">source-confirmed</span></h3>
+        <div><span class="k">What changed</span><p>One summary's overall view: beyond the items above, 2018 reorganized and clarified more than it changed concepts.</p></div>
+        <div><span class="k">What it means for us</span><p>2009-based references stay usable for concepts, with a 2018 note wherever a topic changed. It's still one source's opinion, and the change list isn't complete.</p></div>
+        <p class="src">Verified reference §14.8 · GD&amp;T Basics (opinion of the source)</p></div>
+    </div>
+  </section>
+
+  <section class="block">
+    <h2>Unconfirmed: don't teach these yet</h2>
+    <p class="note" style="color:var(--muted);margin:6px 0 0">Provisional in the verified reference. They come from low-quality or unregistered sources and need checking against the 2018 standard first.</p>
+    <div class="chg">
+      <div class="panel ch unconf"><h3>"Each radial element" shown as profile of a line <span class="badge prov">provisional</span></h3>
+        <div><span class="k">Reported change</span><p>The 2009 orientation note "EACH RADIAL ELEMENT" is reportedly shown in 2018 as profile of a line to a datum axis.</p></div>
+        <div><span class="k">Why it would matter</span><p>It affects how radial line elements are taught ("each element" controls).</p></div>
+        <p class="src">Verified reference §14.6 · repost of a GD&amp;T Basics article only</p></div>
+      <div class="panel ch unconf"><h3>Datum wording and rocking datum features <span class="badge prov">provisional</span></h3>
+        <div><span class="k">Reported change</span><p>New datum wording (e.g. a "true geometric counterpart" term) and one default stabilization rule for a primary datum feature that rocks.</p></div>
+        <div><span class="k">Why it would matter</span><p>It could change part of the datum reference frame lesson, where a primary datum feature isn't flat.</p></div>
+        <p class="src">Verified reference §14.7 · exam-prep site only (not registered)</p></div>
+    </div>
+  </section>
+
+  <section class="block panel card refs">
+    <h3 style="color:var(--ink)">Sources and limits</h3>
+    <ul>
+      <li>Built from verified reference §14, which draws on S8 (FARO, Eng-Tips) and S11 (Mitutoyo America slides, Made to Measure, GD&amp;T Basics, GDT Seminars). All are secondary summaries.</li>
+      <li>Not a complete change list. Read ASME Y14.5-2018 for anything a drawing or contract depends on.</li>
+      <li>No entry here is marked verified yet, because the 2018 standard itself hasn't been read for this project.</li>
+    </ul>
+  </section>
+
+  <footer>GD&amp;T in 3D · Reference: What changed in 2018. Generic teaching content.</footer>
+</div>
+</body>
+</html>

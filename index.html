@@ -177,6 +177,17 @@ table.ws tfoot td{border-bottom:0;padding-top:8px;font-weight:500}
 table.ws th .hint{font:500 11px var(--font-mono);color:var(--accent);letter-spacing:.02em}
 .errpick{display:flex;flex-wrap:wrap;gap:10px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:8px 10px}
 .errpick input{width:18px;height:18px;accent-color:var(--accent)}
+.bdim{display:inline-block;border:1px solid currentColor;padding:0 3px;line-height:1.25;font-family:var(--font-mono,monospace)}
+.rlrow{border:1px solid var(--line);border-radius:8px;padding:10px 12px;display:grid;gap:8px}
+.rlmarks{display:flex;flex-wrap:wrap;gap:6px}
+.rlmarks label{display:inline-flex;align-items:center;gap:5px;font-size:13px;border:1px solid var(--line);border-radius:999px;padding:3px 10px;cursor:pointer}
+.rlmarks label.on{border-color:color-mix(in srgb,var(--fail) 55%,var(--line));background:color-mix(in srgb,var(--fail) 8%,transparent);color:var(--fail)}
+.rlmarks input{width:15px;height:15px;accent-color:var(--fail)}
+.pickopt{display:flex;flex-wrap:wrap;gap:10px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:8px 10px;cursor:pointer}
+.pickopt input{width:18px;height:18px;accent-color:var(--accent)}
+.rvq{display:grid;gap:8px;margin-bottom:14px}
+.rvq .rvi{display:flex;flex-wrap:wrap;gap:8px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.st.due{border-color:color-mix(in srgb,var(--fail) 40%,var(--line));color:var(--fail)}
 .score-pill{font:600 14px var(--font-mono);padding:4px 12px;border-radius:999px;border:1px solid var(--line)}
 .score-pill.good{color:var(--pass);border-color:color-mix(in srgb,var(--pass) 35%,var(--line));background:color-mix(in srgb,var(--pass) 9%,transparent)}
 .score-pill.low{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 35%,var(--line));background:color-mix(in srgb,var(--warn) 8%,transparent)}
@@ -342,7 +353,7 @@ const CHARS = {
   circRunout:{label:'Circular runout', cat:'runout'}, totalRunout:{label:'Total runout', cat:'runout'},
   concentricity:{label:'Concentricity (2009 only)', cat:'removed'}, symmetry:{label:'Symmetry (2009 only)', cat:'removed'}
 };
-const PTYPES = {stack:'Calculate a stack / gap', loop:'Find the loop (pick the faces)', accept:'Accept or reject a part', errors:'Find GD&T errors', fcf:'Write the feature control frame'};
+const PTYPES = {stack:'Calculate a stack / gap', loop:'Find the loop (pick the faces)', accept:'Accept or reject a part', errors:'Find GD&T errors', redline:'Red-line a drawing', pick:'Why this callout? (pick for the function)', fcf:'Write the feature control frame'};
 const ASK = {
   wcMin:['Worst-case minimum gap', r => r.mean - r.wc],
   wcMax:['Worst-case maximum gap', r => r.mean + r.wc],
@@ -394,26 +405,37 @@ function evalAccept(P){
   return {f, sizeOK, bonus, allowed, measured, pass: sizeOK && measured <= allowed + 1e-9};
 }
 /* ---- rule checker, from the verified-reference control table (§2) ---- */
-function checkFCF(P, f){
-  const c = f.fcf; if (!c || !c.char) return [];
-  const e = [], d = FEAT[f.kind], ch = CHARS[c.char], cat = ch.cat, isFOS = !!d.fos;
-  const ds = (c.datums || []).filter(Boolean);
-  if (cat === 'removed') e.push('Concentricity and symmetry were removed in Y14.5-2018. Use position, runout or profile.');
-  if (cat === 'form' && ds.length) e.push('Form tolerances never reference datums.');
-  if ((cat === 'orient' || cat === 'runout' || cat === 'location') && !ds.length) e.push(`${ch.label} needs at least one datum reference.`);
+// Each issue has a code (used by Red-line problems) and a message. Sources: verified reference §2 (control table),
+// §3.2 (Ⓜ uses), §4.4 (basic dimensions are toleranced through an FCF, most often position or profile), §7.2 (conc/sym removed).
+function fcfIssues(P, f){
+  const c = f.fcf || {}, e = [], add = (code, msg) => e.push({code, msg}), d = FEAT[f.kind];
+  if (f.locBasic && !(c.char === 'position' || (c.char && CHARS[c.char].cat === 'profile')))
+    add('basic', 'Its location is given by basic dimensions, but no position or profile frame tolerances them. Basic dimensions carry no tolerance of their own.');
+  if (!c.char) return e;
+  const ch = CHARS[c.char], cat = ch.cat, isFOS = !!d.fos, ds = (c.datums || []).filter(Boolean);
+  if (cat === 'removed') add('removed', 'Concentricity and symmetry were removed in Y14.5-2018. Use position, runout or profile.');
+  if (cat === 'form' && ds.length) add('formDatum', 'Form tolerances never reference datums.');
+  if ((cat === 'orient' || cat === 'runout' || cat === 'location') && !ds.length) add('needDatum', `${ch.label} needs at least one datum reference.`);
   if (c.mod === 'MMC' || c.mod === 'LMC'){
-    if (cat === 'profile' || cat === 'runout' || c.char === 'circularity' || c.char === 'cylindricity' || cat === 'removed') e.push(`${ch.label} can't take Ⓜ or Ⓛ on its tolerance.`);
-    else if (!isFOS) e.push('Ⓜ / Ⓛ only applies to a feature of size. This feature has no size.');
+    if (cat === 'profile' || cat === 'runout' || c.char === 'circularity' || c.char === 'cylindricity' || cat === 'removed') add('mod', `${ch.label} can't take Ⓜ or Ⓛ on its tolerance.`);
+    else if (!isFOS) add('mod', 'Ⓜ / Ⓛ only applies to a feature of size. This feature has no size.');
   }
-  if (c.char === 'position' && !isFOS) e.push('Position applies to a feature of size (hole, slot, pin, boss), not a plain surface.');
-  if (!(+c.tol > 0) && !(+c.tol === 0 && (c.mod === 'MMC' || c.mod === 'LMC'))) e.push('Tolerance must be greater than zero (zero is only valid at MMC or LMC).');
-  if (c.dia && !d.cyl) e.push('Ø belongs in the frame only for a cylindrical zone (a round feature).');
+  if (c.char === 'position' && !isFOS) add('posSurface', 'Position applies to a feature of size (hole, slot, pin, boss), not a plain surface.');
+  if (!(+c.tol > 0) && !(+c.tol === 0 && (c.mod === 'MMC' || c.mod === 'LMC'))) add('other', 'Tolerance must be greater than zero (zero is only valid at MMC or LMC).');
+  if (c.dia && !d.cyl) add('other', 'Ø belongs in the frame only for a cylindrical zone (a round feature).');
   const seen = new Set();
-  ds.forEach(L => { if (seen.has(L)) e.push(`Datum ${L} is referenced twice.`); seen.add(L);
-    const t = P.datums[L]; if (!t) e.push(`Datum ${L} isn't defined on the part.`); else if (t === 'feat:' + f.id) e.push(`A feature can't reference itself as datum ${L}.`); });
+  ds.forEach(L => { if (seen.has(L)) add('datumRef', `Datum ${L} is referenced twice.`); seen.add(L);
+    const t = P.datums[L]; if (!t) add('datumRef', `Datum ${L} isn't defined on the part.`); else if (t === 'feat:' + f.id) add('datumRef', `A feature can't reference itself as datum ${L}.`); });
   return e;
 }
+function checkFCF(P, f){ return fcfIssues(P, f).map(x => x.msg); }
 function errorSet(P){ return P.features.filter(f => f.fcf && f.fcf.char && (checkFCF(P,f).length || f.fcf.planted)).map(f => f.id); }
+// D1 Red-line marks a student can put on each feature.
+const RL_MARKS = [
+  ['basic', 'Basic dims, no FCF'], ['formDatum', 'Datum on a form control'], ['mod', 'Ⓜ/Ⓛ where it can\'t go'],
+  ['needDatum', 'Missing datum'], ['posSurface', 'Position on a non-FOS'], ['removed', '2009-only symbol'],
+  ['datumRef', 'Bad datum reference'], ['other', 'Other / functional']];
+function rlExpected(P, f){ const s = new Set(fcfIssues(P, f).map(x => x.code)); if (f.fcf && f.fcf.char && f.fcf.planted) s.add('other'); return [...s]; }
 
 /* ---- templates & sample problems ---- */
 function nextFid(P){ return 'F' + (P.features.reduce((m,f) => Math.max(m, +f.id.slice(1) || 0), 0) + 1); }
@@ -754,8 +776,8 @@ function drawingTable(P, hideId){
   }
   const ds = Object.entries(P.datums || {}).filter(([L,t]) => t).map(([L,t]) => `<b>${L}</b> = ${esc(targetLabel(P,t))}`).join(' · ');
   return `<div class="tblwrap"><table class="tbl"><thead><tr><th>ID</th><th>Feature</th><th>Where</th><th>Size</th><th>Callout</th></tr></thead><tbody>${
-    P.features.map(f => { const dl = datumOf(P,f); return `<tr><td class="mono small">${f.id}${dl.length ? ` <span class="dtag">${dl.join(' ')}</span>` : ''}</td><td>${FEAT[f.kind].label}<br><span class="small muted">${FEAT[f.kind].proc}</span></td><td class="small">${esc(featWhere(P,f))}</td><td class="mono small">${f.size ? sizeText(f) : '—'}</td><td>${f.id === hideId ? '<span class="small muted">You write this one</span>' : fcfSVG(f.fcf, col)}</td></tr>`; }).join('')}</tbody></table></div>
-    <p class="small muted" style="margin:6px 0 0">Datums: ${ds || 'none defined'}. Generic part.</p>`;
+    P.features.map(f => { const dl = datumOf(P,f); return `<tr><td class="mono small">${f.id}${dl.length ? ` <span class="dtag">${dl.join(' ')}</span>` : ''}</td><td>${FEAT[f.kind].label}<br><span class="small muted">${FEAT[f.kind].proc}</span></td><td class="small">${f.locBasic ? esc(featWhere(P,f)).replace(/(\d*\.\d+)/g, '<span class="bdim">$1</span>') : esc(featWhere(P,f))}</td><td class="mono small">${f.size ? sizeText(f) : '—'}</td><td>${f.id === hideId ? `<span class="small muted">${P.ptype === 'pick' ? 'Pick this callout below' : 'You write this one'}</span>` : fcfSVG(f.fcf, col)}</td></tr>`; }).join('')}</tbody></table></div>
+    <p class="small muted" style="margin:6px 0 0">Datums: ${ds || 'none defined'}.${P.features.some(f => f.locBasic) ? ' Boxed numbers are basic dimensions.' : ''} Generic part.</p>`;
 }
 
 /* ===================== Stack on part + Teach mode (spec §10) ===================== */
@@ -1185,6 +1207,8 @@ const playBase = it => it && it.problem;
 const playP = it => UI.play.inst || playBase(it);
 
 
+// D2: option order for a pick problem, shuffled once per attempt (kept in UI.play so it doesn't jump on re-render).
+function pickOrder(P){ const n = (P.choices || []).length; if (!UI.play.order || UI.play.order.length !== n){ const o = [...Array(n).keys()]; for (let i = n - 1; i > 0; i--){ const j = Math.floor(Math.random()*(i+1)); [o[i], o[j]] = [o[j], o[i]]; } UI.play.order = o; } return UI.play.order; }
 /* ---- C5: "Find the loop" ---- */
 // The student builds the chain by picking From/To faces and a sign for each contributor. Graded against the
 // author's chain: a contributor counts when its two faces match a key row (either order); its sign must match too.
@@ -1297,13 +1321,14 @@ function viewCreator(u){
         ${c.char ? `<label class="fld">Ø<input type="checkbox" id="${bid(base+'.dia')}" data-bind="${base}.dia" data-kind="bool" ${c.dia?'checked':''}></label>
         ${inNum(base+'.tol', c.tol, 'Tolerance', 72)}${inSel(base+'.mod', c.mod, [['RFS','RFS'],['MMC','Ⓜ MMC'],['LMC','Ⓛ LMC']], 'Modifier')}
         ${[0,1,2].map(j => inSel(base+'.datums.'+j, c.datums[j] || '', [['','—']].concat(letters.map(L => [L,L])), ['Primary','Secondary','Tertiary'][j])).join('')}` : ''}</div>
-        ${c.char && P.ptype === 'errors' ? `<div class="row"><label class="fld" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="${bid(base+'.planted')}" data-bind="${base}.planted" data-kind="bool" ${c.planted?'checked':''}> Also count as an error (functional mistake the checker can't see)</label>${c.planted ? `<input type="text" id="${bid(base+'.note')}" data-bind="${base}.note" value="${esc(c.note)}" placeholder="Why it's wrong (shown after submit)" style="flex:1;min-width:200px">` : ''}</div>
+        <div class="row"><label class="fld" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="${bid('problem.features.'+i+'.locBasic')}" data-bind="problem.features.${i}.locBasic" data-kind="bool" ${f.locBasic?'checked':''}> Location shown as basic dimensions (boxed)</label></div>
+        ${c.char && (P.ptype === 'errors' || P.ptype === 'redline') ? `<div class="row"><label class="fld" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="${bid(base+'.planted')}" data-bind="${base}.planted" data-kind="bool" ${c.planted?'checked':''}> Also count as an error (functional mistake the checker can't see)</label>${c.planted ? `<input type="text" id="${bid(base+'.note')}" data-bind="${base}.note" value="${esc(c.note)}" placeholder="Why it's wrong (shown after submit)" style="flex:1;min-width:200px">` : ''}</div>
         <div class="row"><input type="text" id="${bid(base+'.why')}" data-bind="${base}.why" value="${esc(c.why || '')}" placeholder="Why (optional, shown for this frame after answering, right or wrong)" style="flex:1;min-width:240px"></div>` : ''}
         ${errs.length ? `<ul class="warns">${errs.map(e => `<li>${esc(e)}</li>`).join('')}</ul>` : (c.char ? '<div class="small ok">Passes the rule checks.</div>' : '')}</div>`; }).join('') || '<div class="empty">Add features first.</div>';
     h += `<span class="small muted">Rule checks come from the project's verified reference (control table, §2). They catch rule breaks, not design intent.</span></div>`;
   }
   // 6 problem
-  const types = sh === 'stack' ? ['stack'] : sh === 'assembly' ? ['stack','loop'] : ['accept','errors','fcf','stack','loop'];
+  const types = sh === 'stack' ? ['stack'] : sh === 'assembly' ? ['stack','loop'] : ['accept','errors','redline','pick','fcf','stack','loop'];
   if (!types.includes(P.ptype)) P.ptype = types[0];
   ensureStackModel(P);
   h += `<div class="panel pad stack"><h3>${sh === 'stack' || sh === 'assembly' ? '3' : '6'} · Problem</h3><div class="row">${inSel('problem.ptype', P.ptype, types.map(t => [t, PTYPES[t]]), 'Students will')}</div>
@@ -1345,6 +1370,30 @@ function answerSetup(P){
     const withC = P.features.filter(f => f.fcf && f.fcf.char), errs = errorSet(P);
     return `<div class="math">${withC.length} callouts shown to students. ${errs.length} count as wrong: ${errs.join(', ') || 'none yet'}.<br>Students check each frame they think is wrong; they're graded on every frame, right or wrong.</div>`;
   }
+  if (P.ptype === 'redline'){
+    const lines = P.features.map(f => { const ex = rlExpected(P, f); return `<b class="mono">${f.id}</b> ${ex.length ? ex.map(k => RL_MARKS.find(m => m[0] === k)[1]).join(' + ') : 'no mark (correct as drawn)'}`; });
+    return `<div class="math">Answer key: the marks each feature should get (from the rule checks in step 5, plus any "also count as an error")<br>${lines.join('<br>') || 'Add features first.'}<br>Students see every feature, callout or not, and tick the marks that apply. Each feature scores only if its marks match exactly.</div>
+      <span class="small muted">To plant a "basic dims, no FCF" error, tick "Location shown as basic dimensions" on a feature and leave it without a position or profile frame.</span>`;
+  }
+  if (P.ptype === 'pick'){
+    const cands = P.features; P.ans = P.ans || {}; P.choices = P.choices || [];
+    if (!cands.find(f => f.id === P.ans.feat)) P.ans.feat = cands.length ? cands[0].id : '';
+    if (!cands.length) return `<div class="empty">Add the feature the question is about in step 3 first.</div>`;
+    if (!P.choices.length) P.choices = [0,1,2].map(() => ({fcf: fcf('position', .010, 'RFS', []), why:''}));
+    if (P.ans.correct == null) P.ans.correct = 0;
+    const letters = Object.entries(P.datums).filter(([L,t]) => t).map(([L]) => L), tf = cands.find(f => f.id === P.ans.feat);
+    let h = `<div class="row">${inSel('problem.ans.feat', P.ans.feat, cands.map(f => [f.id, `${f.id} · ${FEAT[f.kind].label}`]), 'Feature the question is about')}</div>
+      <span class="small muted">Write the function in the problem prompt (step 1), e.g. "This hole takes a mating pin from another part; a functional gage must check it." Students pick the callout that serves that function.</span>`;
+    h += P.choices.map((ch, i) => { const b = 'problem.choices.' + i, c = ch.fcf, errs = checkFCF(P, Object.assign({}, tf, {fcf: c, locBasic: false}));
+      return `<div class="frow"><div class="row"><label class="fld" style="flex-direction:row;align-items:center;gap:6px"><input type="radio" name="pcCorrect" data-act="pcChoiceCorrect" data-i="${i}" ${+P.ans.correct === i ? 'checked' : ''}> Correct answer</label><b class="mono">Option ${'ABCD'[i]}</b><span style="flex:1"></span>${fcfSVG(c, inkColor())}<button class="btn sm danger" type="button" data-act="pcChoiceDel" data-i="${i}" ${P.choices.length <= 2 ? 'disabled' : ''}>Remove</button></div>
+        <div class="row">${inSel(b+'.fcf.char', c.char, Object.entries(CHARS).map(([k,v]) => [k, v.label]), 'Characteristic')}<label class="fld">Ø<input type="checkbox" id="${bid(b+'.fcf.dia')}" data-bind="${b}.fcf.dia" data-kind="bool" ${c.dia?'checked':''}></label>
+        ${inNum(b+'.fcf.tol', c.tol, 'Tolerance', 72)}${inSel(b+'.fcf.mod', c.mod, [['RFS','RFS'],['MMC','Ⓜ MMC'],['LMC','Ⓛ LMC']], 'Modifier')}
+        ${[0,1,2].map(j => inSel(b+'.fcf.datums.'+j, c.datums[j] || '', [['','—']].concat(letters.map(L => [L,L])), ['Primary','Secondary','Tertiary'][j])).join('')}</div>
+        <div class="row"><input type="text" id="${bid(b+'.why')}" data-bind="${b}.why" value="${esc(ch.why || '')}" placeholder="${+P.ans.correct === i ? 'Why this one serves the function' : 'Why this one doesn\'t (shown if a student picks it)'}" style="flex:1;min-width:240px"></div>
+        ${errs.length ? `<div class="small muted">Rule check: ${esc(errs.join(' '))}${+P.ans.correct === i ? ' <b class="failc">The correct answer shouldn\'t break a rule.</b>' : ' (fine for a distractor, if that\'s the point)'}</div>` : ''}</div>`; }).join('');
+    h += `<div class="row"><button class="btn sm" type="button" data-act="pcChoiceAdd" ${P.choices.length >= 4 ? 'disabled' : ''}>Add option</button><span class="small muted">2–4 options. Order is shuffled for students.</span></div>`;
+    return h;
+  }
   if (P.ptype === 'fcf'){
     const cands = P.features.filter(f => f.fcf && f.fcf.char);
     if (!cands.find(f => f.id === P.ans.feat)) P.ans.feat = cands.length ? cands[0].id : '';
@@ -1365,7 +1414,7 @@ function viewPlay(u){
   let h = `<div class="pagehead"><div><span class="small muted mono">${pl.preview ? 'PREVIEW · ' : ''}${it.id.toUpperCase()} · ${PTYPES[P.ptype]}</span><h2>${esc(it.title)}</h2>${!pl.preview && best != null ? `<p>Best score so far: ${best}%</p>` : ''}</div>
     <div class="row">${canTeach(u, it) && !UI.teach.on ? `<button class="btn primary" type="button" data-act="tOpen">${ROLES[u.role].staff ? 'Teach' : 'Step through solution'}</button>` : ''}${randOn ? `<button class="btn" type="button" data-act="tryAnother">Try another</button>` : ''}<button class="btn" type="button" data-act="playBack">${pl.preview ? 'Back to editor' : 'Back to problems'}</button></div></div>${randOn ? `<p class="small muted" style="margin:-6px 0 10px">The numbers in this problem are drawn at random. <b>Try another</b> gives a fresh set; your best score is kept.</p>` : ''}`;
   h += `<div class="creator"><div class="stack">${UI.teach.on && canTeach(u, it) ? teachHTML(P) : ''}<div class="panel pad stack"><h3>Problem</h3><p style="margin:0">${esc(P.prompt)}</p>${playForm(P)}</div>
-    <div class="panel pad stack"><h3>${P.ptype === 'stack' || P.ptype === 'loop' ? 'Stack data' : 'Drawing data'}</h3>${drawingTable(P, P.ptype === 'fcf' ? P.ans.feat : null)}</div></div>
+    <div class="panel pad stack"><h3>${P.ptype === 'stack' || P.ptype === 'loop' ? 'Stack data' : 'Drawing data'}</h3>${drawingTable(P, P.ptype === 'fcf' || P.ptype === 'pick' ? P.ans.feat : null)}</div></div>
     <div class="cside"><div class="panel"><div id="viewerSlot" class="vslot"></div><div class="vbar"><span class="small muted">${P.shape === 'stack' ? 'Items laid end to end from the start line, on the side you chose. Numbers match the table.' : isModelStack(P) ? (loopOptsFor(u) ? 'Loop vectors, one color per row. Hover a row or vector to highlight it.' : 'Find the loop yourself. The vectors appear after you submit.') : 'Drag to rotate · scroll to zoom'}</span><button class="btn sm" type="button" data-act="viewReset">Reset view</button></div></div></div></div>`;
   return h;
 }
@@ -1421,6 +1470,16 @@ function playForm(P){
     const col = inkColor();
     h += `<div class="stack">${P.features.filter(f => f.fcf && f.fcf.char).map(f => `<label class="errpick"><input type="checkbox" id="pa-e-${f.id}" data-ans="e.${f.id}" data-kind="bool" ${a.e && a.e[f.id] ? 'checked' : ''}><span class="mono small">${f.id}</span><span class="small muted" style="min-width:120px">${FEAT[f.kind].label}</span>${fcfSVG(f.fcf, col)}<span class="small muted">This frame is wrong</span></label>`).join('')}</div>`;
   }
+  if (P.ptype === 'redline'){
+    const col = inkColor(), rl = a.rl || {};
+    h += `<p class="small muted" style="margin:0">Red-line every feature that's wrong: tick each mark that applies. Leave a feature unmarked if it's correct as drawn. Boxed numbers are basic dimensions.</p><div class="stack">${P.features.map(f => { const on = rl[f.id] || [];
+      return `<div class="rlrow"><div class="row"><span class="mono small">${f.id}</span><span class="small muted" style="min-width:120px">${FEAT[f.kind].label}</span><span class="small">${f.locBasic ? esc(featWhere(P,f)).replace(/(\d*\.\d+)/g, '<span class="bdim">$1</span>') : esc(featWhere(P,f))}</span><span style="flex:1"></span>${fcfSVG(f.fcf, col)}</div>
+        <div class="rlmarks">${RL_MARKS.map(([k, t]) => `<label class="${on.includes(k) ? 'on' : ''}"><input type="checkbox" data-rl="${f.id}.${k}" ${on.includes(k) ? 'checked' : ''}>${esc(t)}</label>`).join('')}</div></div>`; }).join('')}</div>`;
+  }
+  if (P.ptype === 'pick'){
+    const col = inkColor(), order = pickOrder(P);
+    h += `<div class="stack">${order.map(i => { const ch = P.choices[i]; return `<label class="pickopt"><input type="radio" name="pa-pick" data-ans="pick" value="${i}" ${String(a.pick) === String(i) ? 'checked' : ''}>${fcfSVG(ch.fcf, col)}</label>`; }).join('')}</div>`;
+  }
   if (P.ptype === 'fcf'){
     const letters = Object.entries(P.datums).filter(([L,t]) => t).map(([L]) => L);
     const sel = (k, opts, label) => `<label class="fld">${label}<select id="pa-${k}" data-ans="${k}">${opts.map(([v,t]) => `<option value="${esc(v)}" ${String(a[k]||'')===String(v)?'selected':''}>${esc(t)}</option>`).join('')}</select></label>`;
@@ -1454,6 +1513,18 @@ function grade(P, a){
       const why = is ? checkFCF(P,f).concat(f.fcf.planted && f.fcf.note ? [f.fcf.note] : []).join(' ') : 'This frame is valid.';
       return `<b class="mono">${f.id}</b> ${said === is ? '✓' : '✗'} ${esc(why)}${f.fcf.why ? ` <span class="whyi">${esc(f.fcf.why)}</span>` : ''}`; });
     return {score: Math.round(right / Math.max(1, fs.length) * 100), html: lines.join('<br>')};
+  }
+  if (P.ptype === 'redline'){
+    const rl = a.rl || {}; let right = 0;
+    const name = k => RL_MARKS.find(m => m[0] === k)[1];
+    const lines = P.features.map(f => { const ex = rlExpected(P, f).sort(), got = (rl[f.id] || []).slice().sort(), ok = ex.join() === got.join(); if (ok) right++;
+      const why = fcfIssues(P, f).map(x => x.msg).concat(f.fcf && f.fcf.planted && f.fcf.note ? [f.fcf.note] : []);
+      return `<b class="mono">${f.id}</b> ${ok ? '✓' : '✗'} ${ex.length ? 'Should be marked: ' + ex.map(name).join(' + ') + '. ' + esc(why.join(' ')) : 'Correct as drawn: no mark.'}${!ok && got.length ? ` <span class="muted">You marked: ${got.map(name).join(' + ')}.</span>` : ''}${f.fcf && f.fcf.why ? ` <span class="whyi">${esc(f.fcf.why)}</span>` : ''}`; });
+    return {score: Math.round(right / Math.max(1, P.features.length) * 100), html: lines.join('<br>') + '<br><span class="small muted">Each feature scores only when its marks match exactly.</span>'};
+  }
+  if (P.ptype === 'pick'){
+    const ci = +P.ans.correct, pi = a.pick === '' || a.pick == null ? -1 : +a.pick, ok = pi === ci, C = P.choices[ci], Pk = P.choices[pi];
+    return {score: ok ? 100 : 0, html: `${ok ? 'Correct.' : 'Not this one.'}${!ok && Pk ? `<br><b>You picked</b> ${fcfSVG(Pk.fcf, inkColor())} ${esc(Pk.why || '')}` : ''}<br><b>Best for the function:</b> ${fcfSVG(C.fcf, inkColor())} ${esc(C.why || '')}`};
   }
   if (P.ptype === 'fcf'){
     const k = P.features.find(x => x.id === P.ans.feat).fcf; const checks = [
@@ -1669,6 +1740,31 @@ const nameOf = p => p ? (p.name || p.email) : '—';
 let toastT;
 function toast(t){ const el = $('toast'); el.textContent = t; el.classList.add('show'); clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove('show'), 3200); }
 function today(){ return new Date().toISOString().slice(0,10); }
+// A5 review queue (light spaced repetition, stored in progress[itemId].rv = {box, due, miss}).
+// A miss (problem score under 100, or a lesson quiz under 5/5) puts the item in the queue, due tomorrow.
+// A perfect re-try once it's due moves it up a box: due again in 3 days, then 7; a third one clears it.
+// Re-trying early is fine for practice but doesn't move the item.
+const RV_DAYS = [1, 3, 7];
+function addDays(d, n){ const t = new Date(d + 'T12:00:00Z'); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0,10); }
+function reviewUpdate(rec, perfect){
+  const rv = rec.rv;
+  if (!perfect){ rec.rv = {box:0, due: addDays(today(), RV_DAYS[0]), miss: ((rv && rv.miss) || 0) + 1}; return rec; }
+  if (!rv || rv.due > today()) return rec;   // a perfect re-try only counts once the item is due
+  const box = rv.box + 1;
+  if (box >= RV_DAYS.length) delete rec.rv; else rec.rv = {box, due: addDays(today(), RV_DAYS[box]), miss: rv.miss};
+  return rec;
+}
+function reviewList(u){
+  const pr = progressFor(u.email), t = today();
+  return DB.catalog.filter(it => pr[it.id] && pr[it.id].rv && canOpen(u, it)).map(it => ({it, rv: pr[it.id].rv, due: pr[it.id].rv.due <= t})).sort((a,b) => a.rv.due.localeCompare(b.rv.due));
+}
+function reviewPanel(u){
+  const L = reviewList(u); if (!L.length) return '';
+  const dueN = L.filter(x => x.due).length;
+  return `<div class="panel pad rvq"><div class="row" style="justify-content:space-between"><h3>Review queue</h3><span class="small muted">${dueN} due now · ${L.length - dueN} coming up</span></div>
+    ${L.map(({it, rv, due}) => `<div class="rvi"><span class="k mono small">${it.id.toUpperCase()}</span><b style="font-weight:500">${esc(it.title)}</b><span class="st ${due ? 'due' : 'active'}">${due ? 'Due now' : 'Due ' + rv.due}</span><span class="small muted">missed ${rv.miss}× · step ${rv.box + 1} of ${RV_DAYS.length}</span><span style="flex:1"></span><button class="btn sm ${due ? 'primary' : ''}" type="button" data-act="${it.type === 'problem' ? 'play' : 'open'}" data-id="${it.id}">${it.type === 'problem' ? 'Try it' : 'Open lesson'}</button></div>`).join('')}
+    <span class="small muted">Missed items come back tomorrow, then after 3 and 7 days of perfect re-tries. ${L.some(x => x.it.type === 'lesson') ? 'For lessons, re-take the quiz and save a 5/5 score.' : ''}</span></div>`;
+}
 
 /* ===================== UI state ===================== */
 const UI = {teach:{on:false, step:0}, pick:null, tab:'learn', group:null, landingMsg:null, signupStep:null, signupEmail:'', reqMsg:null, confirm:null, pc:{draft:null, isNew:false}, play:{id:null, preview:false, ans:{}, result:null}};
@@ -1789,7 +1885,8 @@ function itemCard(u, it){
     foot += `</div>`;
   }
   const status = it.status === 'draft' ? ` <span class="st draft">Draft · staff only</span>` : '';
-  const done = p.opened ? `<span class="st active">${isProb ? (p.score!=null ? `Best ${p.score}%` : 'Started') : isLesson ? (p.quiz!=null ? `Quiz ${p.quiz}/5` : 'Opened') : 'Used'}</span>` : '';
+  const rvDue = p.rv && p.rv.due <= today();
+  const done = (rvDue ? `<span class="st due">Review due</span> ` : '') + (p.opened ? `<span class="st active">${isProb ? (p.score!=null ? `Best ${p.score}%` : 'Started') : isLesson ? (p.quiz!=null ? `Quiz ${p.quiz}/5` : 'Opened') : 'Used'}</span>` : '');
   return `<div class="panel item${ok?'':' locked'}"><div class="row" style="justify-content:space-between"><span class="k">${it.id.toUpperCase()} · ${TYPE_LABEL[it.type]}</span>${done}</div><h3>${esc(it.title)}${status}</h3><p>${esc(it.desc)}</p>${foot}</div>`;
 }
 function viewLearn(u){
@@ -1808,7 +1905,7 @@ function viewLearn(u){
   const pct = lessons.length ? Math.round(opened/lessons.length*100) : 0;
   return `<div class="pagehead"><div><h2>Welcome, ${esc(nameOf(u))}</h2><p>${ROLES[u.role].label}${g?` in ${esc(g.name)}`:''}</p></div>
     <div class="prog" style="min-width:240px"><span>${opened} of ${lessons.length} lessons opened</span><div class="bar"><i style="width:${pct}%"></i></div></div></div>
-    ${note}<div class="cards">${visible.map(it=>itemCard(u,it)).join('') || '<div class="empty">Nothing assigned yet.</div>'}</div>`;
+    ${note}${reviewPanel(u)}<div class="cards">${visible.map(it=>itemCard(u,it)).join('') || '<div class="empty">Nothing assigned yet.</div>'}</div>`;
 }
 function viewItems(u, type){
   const list = DB.catalog.filter(i => i.type === type && (i.status === 'published' || can(u,'editContent')));
@@ -2077,7 +2174,7 @@ document.addEventListener('submit', ev => {
   if (f.id === 'fPlay'){
     const it = UI.play.preview ? UI.pc.draft : item(UI.play.id); if (!it) return;
     const PP = playP(it), res = grade(PP, UI.play.ans); res.html += whyAfter(PP, UI.play.ans); UI.play.result = res;
-    if (!UI.play.preview){ return act(() => { const pr = DB.progress[u.email] = DB.progress[u.email] || {}; const prev = (pr[it.id] || {}).score; pr[it.id] = Object.assign({}, pr[it.id], {opened:true, score: prev == null ? res.score : Math.max(prev, res.score)}); }); }
+    if (!UI.play.preview){ return act(() => { const pr = DB.progress[u.email] = DB.progress[u.email] || {}; const prev = (pr[it.id] || {}).score; pr[it.id] = reviewUpdate(Object.assign({}, pr[it.id], {opened:true, score: prev == null ? res.score : Math.max(prev, res.score)}), res.score >= 100); }); }
     return render();
   }
   if (f.id === 'fItem' && can(u,'editContent')){
@@ -2140,6 +2237,8 @@ document.addEventListener('click', ev => {
   if (a === 'pcFeatAdd' && UI.pc.draft){ const P = UI.pc.draft.problem; P.features.push(newFeature(P, $('pcKind').value)); return render(); }
   if (a === 'pcFeatDel' && UI.pc.draft){ const P = UI.pc.draft.problem, f = P.features[+b.dataset.i]; P.features.splice(+b.dataset.i, 1);
     Object.keys(P.datums).forEach(L => { if (P.datums[L] === 'feat:' + f.id) P.datums[L] = ''; }); return render(); }
+  if (a === 'pcChoiceAdd' && UI.pc.draft){ const P = UI.pc.draft.problem; P.choices = P.choices || []; if (P.choices.length < 4) P.choices.push({fcf: fcf('position', .010, 'RFS', []), why:''}); return render(); }
+  if (a === 'pcChoiceDel' && UI.pc.draft){ const P = UI.pc.draft.problem, i = +b.dataset.i; if (P.choices.length > 2){ P.choices.splice(i, 1); if (+P.ans.correct === i) P.ans.correct = 0; else if (+P.ans.correct > i) P.ans.correct--; } return render(); }
   if (a === 'pcRowAdd' && UI.pc.draft){ UI.pc.draft.problem.dims.chain.push(Object.assign({name:'New item', nom:.5, up:.002, lo:-.002, dir:'-'}, isModelStack(UI.pc.draft.problem) ? {faceFrom:'', faceTo:''} : {})); return render(); }
   if (a === 'pcRowDel' && UI.pc.draft){ UI.pc.draft.problem.dims.chain.splice(+b.dataset.i, 1); return render(); }
   if (a === 'open'){
@@ -2208,7 +2307,7 @@ function wsConvert(ws, to){
         o.dir = mid < 0 ? '-' : '+'; o.nom = String(+Math.abs(mid).toFixed(5)); o.up = String(+half.toFixed(5)); o.lo = String(+(-half).toFixed(5)); } }
     return o; });
 }
-function blankAns(P){ if (P && P.ptype === 'loop') return {rows: [{from:'', to:'', dir:'+'}, {from:'', to:'', dir:'+'}]}; return P && P.ptype === 'stack' ? {val:'', fmt:'nominal', orient: (P.dims && P.dims.orient) || 'v', ws: Array.from({length: WS_ROWS}, wsRow)} : {}; }
+function blankAns(P){ if (P && P.ptype === 'redline') return {rl:{}}; if (P && P.ptype === 'pick') return {pick:''}; if (P && P.ptype === 'loop') return {rows: [{from:'', to:'', dir:'+'}, {from:'', to:'', dir:'+'}]}; return P && P.ptype === 'stack' ? {val:'', fmt:'nominal', orient: (P.dims && P.dims.orient) || 'v', ws: Array.from({length: WS_ROWS}, wsRow)} : {}; }
 function readField(el){ const k = el.dataset.kind; if (k === 'bool') return el.checked; if (k === 'num'){ const v = parseFloat(el.value); return isNaN(v) ? 0 : v; } return el.value; }
 function liveWs(){
   const ws = UI.play.ans.ws, tb = document.querySelector('table.ws tbody'); if (!tb) return;
@@ -2233,6 +2332,8 @@ document.addEventListener('input', ev => {
 document.addEventListener('change', ev => {
   const el = ev.target, u = me();
   if (el.dataset.ws){ const [i,k] = el.dataset.ws.split('.'); const row = UI.play.ans.ws[+i]; if (row) row[k] = el.value; render(); rebindFocus(el.id); return; }
+  if (el.dataset.act === 'pcChoiceCorrect' && UI.pc.draft){ UI.pc.draft.problem.ans.correct = +el.dataset.i; render(); return; }
+  if (el.dataset.rl){ const [fid, k] = el.dataset.rl.split('.'), rl = UI.play.ans.rl = UI.play.ans.rl || {}, cur = new Set(rl[fid] || []); el.checked ? cur.add(k) : cur.delete(k); rl[fid] = [...cur]; UI.play.result = null; render(); return; }
   if (el.dataset.lr){ const [i,k] = el.dataset.lr.split('.'); const row = (UI.play.ans.rows || [])[+i]; if (row) row[k] = el.value; UI.play.result = null; render(); return; }
   if (el.dataset.bind && UI.pc.draft){ setPath(UI.pc.draft, el.dataset.bind, readField(el));
     const fm = el.dataset.bind.match(/^problem\.dims\.chain\.(\d+)\.face(From|To)$/); if (fm) autoFromFaces(UI.pc.draft.problem, +fm[1]);
@@ -2241,7 +2342,7 @@ document.addEventListener('change', ev => {
   if (el.dataset.ans){ const a = UI.play.ans, k = el.dataset.ans; if (k.startsWith('e.')){ a.e = a.e || {}; a.e[k.slice(2)] = el.checked; } else a[k] = readField(el); if (el.tagName === 'SELECT' || el.type === 'checkbox'){ render(); } return; }
   if (a0(el) === 'upload'){ const it = item(el.dataset.id); if (it && can(u,'editContent')) uploadPage(it, el.files[0]); el.value = ''; return; }
   const a = el.dataset.act, id = el.dataset.id, email = el.dataset.email;
-  if (a === 'quiz'){ return act(() => { const pr = DB.progress[u.email] = DB.progress[u.email] || {}; pr[id] = Object.assign({}, pr[id], {quiz: el.value === '' ? undefined : +el.value}); if (el.value==='') delete pr[id].quiz; }, 'Quiz score saved.'); }
+  if (a === 'quiz'){ return act(() => { const pr = DB.progress[u.email] = DB.progress[u.email] || {}; pr[id] = Object.assign({}, pr[id], {quiz: el.value === '' ? undefined : +el.value}); if (el.value==='') delete pr[id].quiz; else pr[id] = reviewUpdate(pr[id], +el.value >= 5); }, 'Quiz score saved.'); }
   if (a === 'feature' && can(u,'editFeatures')){
     const g = groupById(UI.group);
     return act(() => { g.allowed = el.checked ? g.allowed.concat(id) : g.allowed.filter(x=>x!==id); }, `${item(id).title} ${el.checked?'added to':'removed from'} Partial access for ${g.name}.`);
@@ -2277,7 +2378,7 @@ document.addEventListener('mouseover', ev => {
 });
 
 /* expose pure logic for testing */
-window.__access = {methodNotes, methodHTML, gradeLoop, studentLoopP, signCheck, makeInstance, randValue, randFields, activeRand, whyAfter, keyText, loopSegments, stackFaces, loopClosure, rowWarnings, stackResults, convText, can, canOpen, ROLES, evalStack, evalAccept, checkFCF, grade, template, sampleProblems};
+window.__access = {fcfIssues, rlExpected, RL_MARKS, reviewUpdate, addDays, reviewList, methodNotes, methodHTML, gradeLoop, studentLoopP, signCheck, makeInstance, randValue, randFields, activeRand, whyAfter, keyText, loopSegments, stackFaces, loopClosure, rowWarnings, stackResults, convText, can, canOpen, ROLES, evalStack, evalAccept, checkFCF, grade, template, sampleProblems};
 
 // ---- start-up: finish an email-link sign-in if this page was opened from one, then follow auth state ----
 if (isSignInWithEmailLink(auth, location.href)){
