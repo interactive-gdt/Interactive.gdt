@@ -216,6 +216,9 @@ table.ws th .hint{font:500 11px var(--font-mono);color:var(--accent);letter-spac
 #viewer[hidden]{display:none}
 #viewer .vbar{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line, rgba(0,0,0,.12));background:var(--surface)}
 #viewer .vbar .spacer{flex:1}
+#viewer .vbar{flex-wrap:wrap}
+#viewer .vbar #viewerTitle{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:40vw}
+#viewerJump{font:500 13px var(--font-body);background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:4px 6px;max-width:46vw}
 .vov{position:absolute;inset:0;pointer-events:none;overflow:hidden}
 .vlbl{position:absolute;left:0;top:0;font:500 12px var(--font-mono);color:var(--ink);background:color-mix(in srgb,var(--surface) 88%,transparent);border:1.5px solid;border-radius:6px;padding:1px 6px;white-space:nowrap;display:flex;align-items:center;gap:4px;transition:opacity .15s}
 .vlbl.dim{opacity:.3}
@@ -266,7 +269,7 @@ td.nowrap{white-space:nowrap}
 })();
 </script>
 <div id="viewer" hidden>
-  <div class="vbar"><b id="viewerTitle"></b><span class="spacer"></span><div class="themesw" role="group" aria-label="Color theme"><button type="button" data-th="system" aria-pressed="true" title="Match your device">Auto</button><button type="button" data-th="light" aria-pressed="false">Light</button><button type="button" data-th="dark" aria-pressed="false">Dark</button></div><button class="btn sm" type="button" data-act="closeViewer">Close</button></div>
+  <div class="vbar"><button class="btn sm" type="button" data-act="closeViewer" aria-label="Back to the site">← Back</button><b id="viewerTitle"></b><span class="spacer"></span><select id="viewerJump" aria-label="Go to another lesson or tool"></select><div class="themesw" role="group" aria-label="Color theme"><button type="button" data-th="system" aria-pressed="true" title="Match your device">Auto</button><button type="button" data-th="light" aria-pressed="false">Light</button><button type="button" data-th="dark" aria-pressed="false">Dark</button></div><button class="btn sm" type="button" data-act="closeViewer">Close</button></div>
   <iframe id="viewerFrame" title="Lesson" sandbox="allow-scripts allow-popups allow-forms"></iframe>
 </div>
 
@@ -1732,11 +1735,30 @@ async function openItem(u, it){
     const s = await getDoc(doc(fdb, 'content', it.id));
     if (!s.exists()) return toast(`"${it.title}" has no page uploaded yet.`);
     const ov = $('viewer'); $('viewerTitle').textContent = it.title;
-    const fr = $('viewerFrame'); fr.srcdoc = s.data().html;
+    setFrame(s.data().html);
+    // lesson / tool picker, so you can move between pages without closing the viewer
+    const list = DB.catalog.filter(x => (x.type === 'lesson' || x.type === 'tool') && canOpen(u, x));
+    $('viewerJump').innerHTML = list.map(x => `<option value="${esc(x.id)}" ${x.id === it.id ? 'selected' : ''}>${esc(x.id.toUpperCase())} · ${esc(x.title)}</option>`).join('');
+    // browser / tablet Back closes the viewer instead of leaving the site
+    if (ov.hidden) history.pushState({gdtViewer: true}, ''); 
     ov.hidden = false; document.body.style.overflow = 'hidden';
   } catch(e){ toast(e.code === 'permission-denied' ? 'That item is not included in your access.' : 'Could not open: ' + (e.message || e)); }
 }
-function closeViewer(){ $('viewer').hidden = true; $('viewerFrame').srcdoc = ''; document.body.style.overflow = ''; }
+function closeViewer(fromPop){
+  if ($('viewer').hidden) return;
+  if (fromPop !== true && history.state && history.state.gdtViewer){ history.back(); return; }   // popstate below finishes the close
+  $('viewer').hidden = true; setFrame(''); document.body.style.overflow = '';
+}
+// Swap in a fresh iframe instead of changing srcdoc: changing srcdoc adds browser-history entries,
+// which made Back step through old lesson pages instead of closing the viewer.
+function setFrame(html){
+  const old = $('viewerFrame'), fr = document.createElement('iframe');
+  fr.id = 'viewerFrame'; fr.title = 'Lesson'; fr.setAttribute('sandbox', 'allow-scripts allow-popups allow-forms');
+  if (html) fr.srcdoc = html;
+  fr.addEventListener('load', () => { try { fr.contentWindow.postMessage({gdtTheme: window.gdtTheme ? window.gdtTheme() : 'system'}, '*'); } catch(e){} });
+  old.replaceWith(fr);
+}
+window.addEventListener('popstate', () => { if (!$('viewer').hidden) closeViewer(true); });
 async function uploadPage(it, file){
   if (!file) return;
   if (file.size > 900000) return toast('That file is over 900 KB. Firestore documents are limited to 1 MB.');
@@ -2352,6 +2374,7 @@ document.addEventListener('input', ev => {
 });
 document.addEventListener('change', ev => {
   const el = ev.target, u = me();
+  if (el.id === 'viewerJump'){ const it = item(el.value); if (it && canOpen(u, it)){ act(() => { const pr = DB.progress[u.email] = DB.progress[u.email] || {}; pr[it.id] = Object.assign({}, pr[it.id], {opened:true}); }); openItem(u, it); } return; }
   if (el.dataset.ws){ const [i,k] = el.dataset.ws.split('.'); const row = UI.play.ans.ws[+i]; if (row) row[k] = el.value; render(); rebindFocus(el.id); return; }
   if (el.dataset.act === 'pcChoiceCorrect' && UI.pc.draft){ UI.pc.draft.problem.ans.correct = +el.dataset.i; render(); return; }
   if (el.dataset.rl){ const [fid, k] = el.dataset.rl.split('.'), rl = UI.play.ans.rl = UI.play.ans.rl || {}, cur = new Set(rl[fid] || []); el.checked ? cur.add(k) : cur.delete(k); rl[fid] = [...cur]; UI.play.result = null; render(); return; }
