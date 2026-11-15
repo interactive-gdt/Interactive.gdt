@@ -103,6 +103,17 @@ footer{margin:36px 0 40px;font-size:13px;color:var(--muted);border-top:1px solid
 .swap th{font-size:12.5px;color:var(--muted);font-weight:600}
 .note{max-width:75ch}
 @media (max-width:760px){.ch{grid-template-columns:1fr}}
+
+/* ---- Theme v2: one hue per role (blue = datums/true position, purple = gage/VC, green/red = pass/fail,
+   orange = the feature you're moving, gray = the part) + System / Light / Dark switch ---- */
+:root{--bg:#f2f4f3;--surface:#fcfcfb;--ink:#1d252b;--muted:#56626b;--line:#d2d8d5;--accent:#1f63b5;--pass:#1c8a54;--fail:#c4372c;--pin:#7b3fc4;--live:#d46a00;--warn:#9a6a00;--viewer-bg:#e4e8e6;--steel:#98a2a8;color-scheme:light}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#11161a;--surface:#182025;--ink:#e7ecef;--muted:#9ba7ae;--line:#2c363c;--accent:#5aa4ff;--pass:#34d08a;--fail:#ff6a5c;--pin:#b78bff;--live:#ffa23d;--warn:#e0b45a;--viewer-bg:#141b20;--steel:#8c99a2;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#11161a;--surface:#182025;--ink:#e7ecef;--muted:#9ba7ae;--line:#2c363c;--accent:#5aa4ff;--pass:#34d08a;--fail:#ff6a5c;--pin:#b78bff;--live:#ffa23d;--warn:#e0b45a;--viewer-bg:#141b20;--steel:#8c99a2;color-scheme:dark}
+.themesw{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;margin-left:auto}
+.themesw button{font:500 12.5px var(--font-body,inherit);padding:4px 10px;border:0;background:transparent;color:var(--muted);cursor:pointer}
+.themesw button + button{border-left:1px solid var(--line)}
+.themesw button[aria-pressed="true"]{background:color-mix(in srgb,var(--accent) 16%,var(--surface));color:var(--accent);font-weight:600}
+.themesw[hidden]{display:none}
 </style>
 </head>
 <body>
@@ -117,6 +128,7 @@ footer{margin:36px 0 40px;font-size:13px;color:var(--muted);border-top:1px solid
       <a href="https://claude.ai/artifact/Tt2KhJYbHMtZYSaQpUKCaK">Tool · Convert a callout</a>
       <span class="current" aria-current="page">Reference · What changed in 2018</span>
     </nav>
+    <div class="themesw" role="group" aria-label="Color theme"><button type="button" data-th="system" aria-pressed="true" title="Match your device">Auto</button><button type="button" data-th="light" aria-pressed="false">Light</button><button type="button" data-th="dark" aria-pressed="false">Dark</button></div>
   </div>
 </div>
 
@@ -198,5 +210,17 @@ footer{margin:36px 0 40px;font-size:13px;color:var(--muted);border-top:1px solid
 
   <footer>GD&amp;T in 3D · Reference: What changed in 2018. Generic teaching content.</footer>
 </div>
+<script>
+/* Theme switch: Auto follows the device; Light/Dark override it. Remembered per browser where storage works.
+   Inside the training site, the site sends its choice with postMessage and this switch hides. */
+(function(){var K='gdt-theme',root=document.documentElement;
+function apply(t){ if(t==='light'||t==='dark') root.setAttribute('data-theme',t); else root.removeAttribute('data-theme');
+  document.querySelectorAll('[data-th]').forEach(function(b){ b.setAttribute('aria-pressed', String((t||'system')===b.dataset.th)); }); }
+var saved=null; try{ saved=localStorage.getItem(K); }catch(e){}
+apply(saved||'system');
+document.addEventListener('click',function(e){ var b=e.target.closest && e.target.closest('[data-th]'); if(!b) return; apply(b.dataset.th); try{ localStorage.setItem(K,b.dataset.th); }catch(e){} });
+window.addEventListener('message',function(e){ if(e.data && e.data.gdtTheme){ apply(e.data.gdtTheme); var w=document.querySelector('.themesw'); if(w) w.hidden=true; } });
+})();
+</script>
 </body>
 </html>
