@@ -29,6 +29,13 @@
   :root:not([data-theme="light"]){--bg:#151a1d;--surface:#1b2125;--ink:#dce2e5;--muted:#98a3aa;--line:#2b3338;--accent:#93b1cc;--pass:#7cb294;--fail:#d28c84;--warn:#cfb06e;color-scheme:dark}
 }
 :root[data-theme="dark"]{--bg:#151a1d;--surface:#1b2125;--ink:#dce2e5;--muted:#98a3aa;--line:#2b3338;--accent:#93b1cc;--pass:#7cb294;--fail:#d28c84;--warn:#cfb06e;color-scheme:dark}
+:root{--bg:#f2f4f3;--surface:#fcfcfb;--ink:#1d252b;--muted:#56626b;--line:#d2d8d5;--accent:#1f63b5;--pass:#1c8a54;--fail:#c4372c;--pin:#7b3fc4;--live:#d46a00;--warn:#9a6a00;--viewer-bg:#e4e8e6;--steel:#98a2a8;color-scheme:light}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--bg:#11161a;--surface:#182025;--ink:#e7ecef;--muted:#9ba7ae;--line:#2c363c;--accent:#5aa4ff;--pass:#34d08a;--fail:#ff6a5c;--pin:#b78bff;--live:#ffa23d;--warn:#e0b45a;--viewer-bg:#141b20;--steel:#8c99a2;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#11161a;--surface:#182025;--ink:#e7ecef;--muted:#9ba7ae;--line:#2c363c;--accent:#5aa4ff;--pass:#34d08a;--fail:#ff6a5c;--pin:#b78bff;--live:#ffa23d;--warn:#e0b45a;--viewer-bg:#141b20;--steel:#8c99a2;color-scheme:dark}
+.themesw{display:inline-flex;border:1px solid var(--line);border-radius:999px;overflow:hidden}
+.themesw button{font:500 12.5px var(--font-body);padding:4px 10px;border:0;background:transparent;color:var(--muted);cursor:pointer}
+.themesw button + button{border-left:1px solid var(--line)}
+.themesw button[aria-pressed="true"]{background:color-mix(in srgb,var(--accent) 16%,var(--surface));color:var(--accent);font-weight:600}
 *{box-sizing:border-box}
 html,body{margin:0}
 body{background:var(--bg);color:var(--ink);font-family:var(--font-body);font-size:15.5px;line-height:1.6}
@@ -235,6 +242,7 @@ td.nowrap{white-space:nowrap}
   <div class="wrap">
     <span class="brand">GD&amp;T in 3D</span>
     <span class="spacer"></span>
+    <div class="themesw" role="group" aria-label="Color theme"><button type="button" data-th="system" aria-pressed="true" title="Match your device">Auto</button><button type="button" data-th="light" aria-pressed="false">Light</button><button type="button" data-th="dark" aria-pressed="false">Dark</button></div>
     <div class="who">
       <span id="whoName" class="small"></span>
       <span id="whoRole"></span>
@@ -244,8 +252,21 @@ td.nowrap{white-space:nowrap}
 
 <main id="main"></main>
 <div id="toast" role="status" aria-live="polite"></div>
+<script>
+/* Theme switch: Auto follows the device; Light/Dark override it, remembered in this browser.
+   The open lesson (sandboxed iframe) gets the choice by postMessage. */
+(function(){ var K = 'gdt-theme', root = document.documentElement;
+  function cur(){ try { return localStorage.getItem(K) || 'system'; } catch(e){ return 'system'; } }
+  function tellLesson(t){ var fr = document.getElementById('viewerFrame'); if (fr && fr.contentWindow) try { fr.contentWindow.postMessage({gdtTheme: t}, '*'); } catch(e){} }
+  function apply(t){ if (t === 'light' || t === 'dark') root.setAttribute('data-theme', t); else root.removeAttribute('data-theme');
+    document.querySelectorAll('.themesw [data-th]').forEach(function(b){ b.setAttribute('aria-pressed', String(t === b.dataset.th)); }); tellLesson(t); }
+  window.gdtTheme = cur; apply(cur());
+  document.addEventListener('click', function(e){ var b = e.target.closest && e.target.closest('.themesw [data-th]'); if (!b) return; try { localStorage.setItem(K, b.dataset.th); } catch(e){} apply(b.dataset.th); });
+  document.addEventListener('DOMContentLoaded', function(){ var fr = document.getElementById('viewerFrame'); if (fr) fr.addEventListener('load', function(){ tellLesson(cur()); }); });
+})();
+</script>
 <div id="viewer" hidden>
-  <div class="vbar"><b id="viewerTitle"></b><span class="spacer"></span><button class="btn sm" type="button" data-act="closeViewer">Close</button></div>
+  <div class="vbar"><b id="viewerTitle"></b><span class="spacer"></span><div class="themesw" role="group" aria-label="Color theme"><button type="button" data-th="system" aria-pressed="true" title="Match your device">Auto</button><button type="button" data-th="light" aria-pressed="false">Light</button><button type="button" data-th="dark" aria-pressed="false">Dark</button></div><button class="btn sm" type="button" data-act="closeViewer">Close</button></div>
   <iframe id="viewerFrame" title="Lesson" sandbox="allow-scripts allow-popups allow-forms"></iframe>
 </div>
 
@@ -1705,7 +1726,7 @@ function starterCatalog(){
   ].concat(sampleProblems().map((p,i) => Object.assign(p, {status:'draft', order:40 + i})));
 }
 // Lesson / tool page bodies live in content/{id}, readable only by people allowed to open the item.
-function stripSeriesNav(html){ return html.replace(/<div class="series">[\s\S]*?<\/nav>\s*<\/div>\s*<\/div>/, ''); }
+function stripSeriesNav(html){ return html.replace(/<div class="series">[\s\S]*?<\/nav>\s*(?:<div class="themesw"[\s\S]*?<\/div>\s*)?<\/div>\s*<\/div>/, ''); }
 async function openItem(u, it){
   try {
     const s = await getDoc(doc(fdb, 'content', it.id));
