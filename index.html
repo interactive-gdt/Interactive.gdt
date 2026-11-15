@@ -206,6 +206,7 @@ tr[data-lrow].hl td{background:color-mix(in srgb,var(--accent) 9%,transparent)}
 tr.hidden-step td{color:var(--muted)}
 .why{margin-top:8px;padding:8px 10px;border-left:3px solid color-mix(in srgb,var(--accent) 45%,var(--line));background:color-mix(in srgb,var(--accent) 5%,transparent);border-radius:0 6px 6px 0;font-size:14px;line-height:1.55}
 .whyi{color:var(--muted)}
+td.nowrap{white-space:nowrap}
 .row.nowrap{flex-wrap:nowrap;gap:4px}
 .okc{color:var(--pass)} .failc{color:var(--fail)}
 .teach .teachbar{gap:6px}
@@ -339,7 +340,7 @@ const CHARS = {
   circRunout:{label:'Circular runout', cat:'runout'}, totalRunout:{label:'Total runout', cat:'runout'},
   concentricity:{label:'Concentricity (2009 only)', cat:'removed'}, symmetry:{label:'Symmetry (2009 only)', cat:'removed'}
 };
-const PTYPES = {stack:'Calculate a stack / gap', accept:'Accept or reject a part', errors:'Find GD&T errors', fcf:'Write the feature control frame'};
+const PTYPES = {stack:'Calculate a stack / gap', loop:'Find the loop (pick the faces)', accept:'Accept or reject a part', errors:'Find GD&T errors', fcf:'Write the feature control frame'};
 const ASK = {
   wcMin:['Worst-case minimum gap', r => r.mean - r.wc],
   wcMax:['Worst-case maximum gap', r => r.mean + r.wc],
@@ -720,6 +721,10 @@ function featWhere(P, f){
 }
 function drawingTable(P, hideId){
   const col = inkColor();
+  if (isModelStack(P) && P.ptype === 'loop'){
+    const fs = stackFaces(P);
+    return `<p class="small" style="margin:0">Faces you can pick along the ${axisWord(P)} axis (position from the axis origin):</p><div class="tblwrap"><table class="tbl"><tbody>${fs.map(f => `<tr><td>${esc(f.name)}</td><td class="r mono small">${fmt(f.pos)}</td></tr>`).join('')}</tbody></table></div>`;
+  }
   if (isModelStack(P)){
     const fn = id => { const f = faceById(P, id); return f ? esc(f.name) : '—'; }, rq = P.req || {};
     return `<div class="tblwrap"><table class="tbl"><thead><tr><th>#</th><th>Description</th><th>From face</th><th>To face</th><th class="r">Nominal</th><th class="r">Upper</th><th class="r">Lower</th></tr></thead><tbody>${
@@ -745,7 +750,7 @@ function drawingTable(P, hideId){
 const LOOP_COLORS = ['#4f86b5','#d0893a','#3f9a80','#c9a43a','#8a72b8','#c4697a','#5aa7cf','#93754a','#6a9a52','#b05a4e']; // muted Okabe-Ito-style, row order
 const GAP_COLOR = '#6b737a';
 const BODY_KINDS = {block:'Block', cylinder:'Cylinder', tube:'Tube (hollow cylinder)'};
-const isModelStack = P => !!P && P.ptype === 'stack' && P.shape !== 'stack';
+const isModelStack = P => !!P && (P.ptype === 'stack' || P.ptype === 'loop') && P.shape !== 'stack';   // a chain tied to model faces
 const rowColor = i => LOOP_COLORS[i % LOOP_COLORS.length];
 const f5 = v => (v < -5e-7 ? '−' : '') + Math.abs(v).toFixed(5).replace(/^0(?=\.)/,'');
 function nextBid(P){ return 'B' + ((P.model.bodies || []).reduce((m,b) => Math.max(m, +b.id.slice(1) || 0), 0) + 1); }
@@ -770,6 +775,8 @@ function ensureStackModel(P){
   P.req = P.req || {min:'', max:''};
   if (P.mrssF == null) P.mrssF = 1.5;
   if (P.showLoopBeforeSubmit == null) P.showLoopBeforeSubmit = false;
+  P.float = Object.assign({on:false, dir:'-', note:''}, P.float || {});
+  if (P.loopShowCount == null) P.loopShowCount = true;
   P.ans = P.ans || {}; if (!ASK[P.ans.ask]) P.ans.ask = 'wcMin'; if (P.ans.tol == null) P.ans.tol = .0005;
 }
 // Named faces along the stack axis: [{id, name, pos, top?, sec?}]. pos is the distance along the axis.
@@ -830,6 +837,11 @@ function loopClosure(P){
 // When a face pick changes, fill the nominal and suggest the direction from the model.
 function autoFromFaces(P, i){ const c = P.dims.chain[i], m = c && rowModel(P, c); if (!m) return; c.nom = +m.dist.toFixed(4); if (m.dist > 1e-9) c.dir = m.dir; }
 
+// C1: sign check. In a loop, gap = Σ(dir × dimension), so a + row opens the gap as it grows and a − row closes it.
+const signCheck = dir => dir === '-' ? 'bigger → gap closes (−)' : 'bigger → gap opens (+)';
+const SIGN_Q = 'Sign check: if this dimension got bigger, would the gap open or close? Opens → +, closes → −.';
+const floatOn = P => !!(P && P.float && P.float.on);
+const axisWord = P => ((axisOpts(P).find(([k]) => k === (P.model && P.model.axis)) || ['', 'X'])[1]).split(' ')[0];
 /* ---- model: assembly bodies ---- */
 function buildAssembly(P, g, addMesh){
   const n = v => +v || 0, shades = ['#a9b1b7','#c3c9cc','#9aa3a9','#b7bec3','#8f989e','#cfd4d7'];
@@ -870,7 +882,7 @@ function addLoop(P, g, t, loop){
   const box = new THREE.Box3().setFromObject(g), span = box.getSize(new THREE.Vector3()).length() || 1, fr = axisFrame(P, box);
   const step = span * .055, margin = span * .07, shaftR = span * .0035;
   const pt = (pos, h) => fr.base.clone().addScaledVector(fr.dir, pos).addScaledVector(fr.lane, h);
-  const L = {rows: [], gap: null, faces: []};
+  const L = {rows: [], gap: null, faces: [], extras: []};
   const rowsShown = Math.min(chain.length, loop.upTo == null ? chain.length : loop.upTo);
   const csz = box.getSize(new THREE.Vector3()), cc = box.getCenter(new THREE.Vector3());
   const tintPlane = (face, col) => {   // translucent face tint, perpendicular to the axis
@@ -932,6 +944,12 @@ function addLoop(P, g, t, loop){
       L.gap = {mats, lbl: {html: 'Gap', pos: pt((a.pos+b.pos)/2, h + step*.45), color: GAP_COLOR, row: -1}, pick: ar.pick};
     }
   }
+  if (loop.float && floatOn(P)){   // C2: push direction, drawn below the part
+    const sgnF = P.float.dir === '+' ? 1 : -1, poss = faces.map(f => f.pos), lo = Math.min(...poss, 0), hi = Math.max(...poss, 0);
+    const hB = fr.lane.dot(box.min) - margin, a0 = sgnF > 0 ? lo : hi, a1 = sgnF > 0 ? hi : lo;
+    const ar = arrow(pt(a0, hB), pt(a1, hB), '#8a949b', false); ar.mats.forEach(m => m.userData.base = .8);
+    L.extras.push({mats: ar.mats, lbl: {html: `Push → ${sgnF > 0 ? '+' : '−'}${axisWord(P)}`, pos: pt((a0+a1)/2, hB - step*.6), color: '#8a949b', row: -2}});
+  }
   return L;
 }
 // Highlight one row (or the gap = -1); everything else dims to about 30%. null clears.
@@ -949,7 +967,7 @@ function setLoopHL(i){
 function placeLabels(){
   const L = VIEW.loop; if (!L || !VIEW.ov) return; const cam = VIEW.mode === '2d' ? VIEW.ortho : VIEW.persp;
   const w = VIEW.el.clientWidth, h = VIEW.el.clientHeight, v = new THREE.Vector3();
-  L.rows.concat(L.gap ? [L.gap] : []).forEach(r => { if (!r.lblEl) return; v.copy(r.lbl.pos); VIEW.group.localToWorld(v); v.project(cam);
+  L.rows.concat(L.gap ? [L.gap] : [], L.extras || []).forEach(r => { if (!r.lblEl) return; v.copy(r.lbl.pos); VIEW.group.localToWorld(v); v.project(cam);
     r.lblEl.style.transform = `translate(${((v.x + 1)/2*w).toFixed(1)}px, ${((1 - v.y)/2*h).toFixed(1)}px) translate(-50%, -50%)`;
     r.lblEl.style.display = v.z > 1 ? 'none' : ''; });
 }
@@ -964,7 +982,7 @@ function scaleFixed(){
 function mountLoopUI(L){
   VIEW.loop = L; VIEW.hl = null; if (!VIEW.ov) return; VIEW.ov.innerHTML = '';
   if (!L) return;
-  L.rows.concat(L.gap ? [L.gap] : []).forEach(r => { const el = document.createElement('div'); el.className = 'vlbl'; el.style.borderColor = r.lbl.color; el.innerHTML = r.lbl.html; el.dataset.lrow = r.lbl.row; VIEW.ov.appendChild(el); r.lblEl = el; });
+  L.rows.concat(L.gap ? [L.gap] : [], L.extras || []).forEach(r => { const el = document.createElement('div'); el.className = 'vlbl'; el.style.borderColor = r.lbl.color; el.innerHTML = r.lbl.html; el.dataset.lrow = r.lbl.row; VIEW.ov.appendChild(el); r.lblEl = el; });
   setLoopHL(null);
 }
 function pickAt(ev, list){
@@ -999,27 +1017,34 @@ function chainEditor(P){
   let h = `<div class="row">${inSel('problem.model.axis', P.model.axis, axisOpts(P), 'Stack axis')}<span class="small muted">1D: every vector runs parallel to this axis.</span></div>`;
   if (!faces.length) h += `<div class="msg info">${P.shape === 'assembly' ? 'Add bodies in step 2 first. Each body gives a left and a right face.' : 'This model has no faces along that axis yet.'}</div>`;
   if (pk) h += `<div class="msg info">Click a face on the 3D model for <b>${pk.i < 0 ? 'the gap' : 'row ' + (pk.i + 1)}</b>, ${pk.end === 'faceFrom' ? 'From' : 'To'}. <button class="link" type="button" data-act="pcPickCancel">Cancel</button></div>`;
-  h += `<div class="tblwrap"><table class="tbl chainx"><thead><tr><th>#</th><th>Description</th><th>From face</th><th>To face</th><th>Dir</th><th>Nominal</th><th>Upper</th><th>Lower</th><th></th></tr></thead><tbody>${
+  h += `<div class="tblwrap"><table class="tbl chainx"><thead><tr><th>#</th><th>Description</th><th>From face</th><th>To face</th><th>Dir</th><th title="${SIGN_Q}">Sign check</th><th>Nominal</th><th>Upper</th><th>Lower</th><th></th></tr></thead><tbody>${
     P.dims.chain.map((c,i) => { const b = 'problem.dims.chain.' + i, w = rowWarnings(P, c);
       return `<tr data-lrow="${i}"><td class="mono small"><span class="sw" style="background:${rowColor(i)}"></span>${i+1}</td>
         <td><input type="text" id="${bid(b+'.name')}" data-bind="${b}.name" value="${esc(c.name)}" style="width:140px"></td>
         <td><div class="row nowrap"><select id="${bid(b+'.faceFrom')}" data-bind="${b}.faceFrom" style="max-width:190px">${fo.map(([v,t]) => `<option value="${esc(v)}" ${v === (c.faceFrom||'') ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>${pbtn(i,'faceFrom')}</div></td>
         <td><div class="row nowrap"><select id="${bid(b+'.faceTo')}" data-bind="${b}.faceTo" style="max-width:190px">${fo.map(([v,t]) => `<option value="${esc(v)}" ${v === (c.faceTo||'') ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>${pbtn(i,'faceTo')}</div></td>
         <td><select id="${bid(b+'.dir')}" data-bind="${b}.dir"><option value="+" ${c.dir !== '-' ? 'selected' : ''}>+</option><option value="-" ${c.dir === '-' ? 'selected' : ''}>−</option></select></td>
+        <td class="small muted nowrap">${signCheck(c.dir)}</td>
         <td><input type="text" inputmode="decimal" id="${bid(b+'.nom')}" data-bind="${b}.nom" data-kind="num" value="${+c.nom}" style="width:76px"></td>
         <td><input type="text" inputmode="decimal" id="${bid(b+'.up')}" data-bind="${b}.up" data-kind="num" value="${+c.up}" style="width:68px"></td>
         <td><input type="text" inputmode="decimal" id="${bid(b+'.lo')}" data-bind="${b}.lo" data-kind="num" value="${+c.lo}" style="width:68px"></td>
         <td class="r"><button class="btn sm danger" type="button" data-act="pcRowDel" data-i="${i}" aria-label="Remove row ${i+1}">×</button></td></tr>
-        ${w.length ? `<tr class="wrow"><td></td><td colspan="8"><ul class="warns">${w.map(x => `<li>${esc(x)}</li>`).join('')}</ul></td></tr>` : ''}`; }).join('')}
+        ${w.length ? `<tr class="wrow"><td></td><td colspan="9"><ul class="warns">${w.map(x => `<li>${esc(x)}</li>`).join('')}</ul></td></tr>` : ''}`; }).join('')}
       <tr data-lrow="-1"><td class="mono small"><span class="sw gap"></span>Gap</td><td class="small muted">Closes the loop</td>
         <td><div class="row nowrap"><select id="${bid('problem.gap.faceFrom')}" data-bind="problem.gap.faceFrom" style="max-width:190px">${fo.map(([v,t]) => `<option value="${esc(v)}" ${v === (P.gap.faceFrom||'') ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>${pbtn(-1,'faceFrom')}</div></td>
         <td><div class="row nowrap"><select id="${bid('problem.gap.faceTo')}" data-bind="problem.gap.faceTo" style="max-width:190px">${fo.map(([v,t]) => `<option value="${esc(v)}" ${v === (P.gap.faceTo||'') ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>${pbtn(-1,'faceTo')}</div></td>
-        <td colspan="5" class="small muted">Gap = To − From along the axis</td></tr></tbody></table></div>
+        <td colspan="6" class="small muted">Gap = To − From along the axis</td></tr></tbody></table></div>
+    <p class="small muted" style="margin:0">${SIGN_Q}</p>
     <div class="row"><button class="btn sm" type="button" data-act="pcRowAdd">Add row</button><span class="small muted">Picking faces fills the nominal from the model and suggests the direction. You can override both; the warnings tell you when they disagree with the model.</span></div>
     <div class="math">Loop closure: Σ(signed nominals) = ${fmt(cl.sum)}${cl.ok == null ? ' · tag the gap faces to check it against the model' : ` · gap on the model = ${fmt(cl.gap)} · <b>${cl.ok ? 'closes ✓' : 'does NOT close ✗'}</b>`}</div>
     <div class="row">${inNum('problem.req.min', P.req.min === '' ? null : P.req.min, 'Requirement: min gap', 90)}${inNum('problem.req.max', P.req.max === '' ? null : P.req.max, 'Requirement: max gap', 90)}${inNum('problem.mrssF', P.mrssF, 'MRSS factor f', 70)}
-      <label class="fld" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="${bid('problem.showLoopBeforeSubmit')}" data-bind="problem.showLoopBeforeSubmit" data-kind="bool" ${P.showLoopBeforeSubmit ? 'checked' : ''}> Show loop before submit</label></div>
-    <span class="small muted">Off by default: finding the loop is part of the exercise, so students see the vectors only after they submit.</span>`;
+      ${P.ptype === 'loop' ? `<label class="fld" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="${bid('problem.loopShowCount')}" data-bind="problem.loopShowCount" data-kind="bool" ${P.loopShowCount ? 'checked' : ''}> Tell students how many contributors there are</label>`
+        : `<label class="fld" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="${bid('problem.showLoopBeforeSubmit')}" data-bind="problem.showLoopBeforeSubmit" data-kind="bool" ${P.showLoopBeforeSubmit ? 'checked' : ''}> Show loop before submit</label>`}</div>
+    <span class="small muted">${P.ptype === 'loop' ? 'Students build the chain themselves by picking faces; their own vectors draw live as they go. The key above is hidden until they submit.' : 'Off by default: finding the loop is part of the exercise, so students see the vectors only after they submit.'}</span>
+    <h3 style="margin-top:6px">Float step <span class="small muted" style="font-weight:400">optional · shown first in Teach mode</span></h3>
+    <div class="row"><label class="fld" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="${bid('problem.float.on')}" data-bind="problem.float.on" data-kind="bool" ${P.float.on ? 'checked' : ''}> Push the parts to one side before building the loop</label>
+      ${P.float.on ? inSel('problem.float.dir', P.float.dir, [['-', 'toward − ' + axisWord(P)], ['+', 'toward + ' + axisWord(P)]], 'Push direction') : ''}</div>
+    ${P.float.on ? taBind('problem.float.note', P.float.note, 'What pushes them, and where the clearance collects (shown in Teach)') : '<span class="small muted">Use it when parts can float (clearance, assembly order). Pushing everything one way makes the clearance collect in the gap you analyze.</span>'}`;
   return h;
 }
 function bodiesEditor(P){
@@ -1044,21 +1069,22 @@ function stackResults(P){
   return {r, f, rows: [row('Worst case', r.wc), row('RSS', r.rss), row(`Modified RSS (f = ${f})`, r.mrss)], lo, hi};
 }
 function teachHTML(P){
-  const chain = P.dims.chain, n = chain.length, step = Math.max(0, Math.min(UI.teach.step, n + 1));
+  const chain = P.dims.chain, n = chain.length, F = floatOn(P) ? 1 : 0, step = Math.max(0, Math.min(UI.teach.step, n + 1 + F));
   let mean = 0, wc = 0, ss = 0;
   const lines = chain.map((c,i) => { const U = +c.up || 0, Lo = +c.lo || 0, m = (+c.nom || 0) + (U+Lo)/2, t = (U-Lo)/2, s = c.dir === '-' ? -1 : 1;
-    mean += s*m; wc += Math.abs(t); ss += t*t; const on = i < step;
-    return `<tr data-lrow="${i}" class="${on ? '' : 'hidden-step'}"><td class="mono small"><span class="sw" style="background:${rowColor(i)}"></span>${i+1}</td><td>${on ? esc(c.name) : '<span class="muted">·</span>'}</td><td class="mono">${on ? (s < 0 ? '−' : '+') : ''}</td>
+    mean += s*m; wc += Math.abs(t); ss += t*t; const on = i < step - F;
+    return `<tr data-lrow="${i}" class="${on ? '' : 'hidden-step'}"><td class="mono small"><span class="sw" style="background:${rowColor(i)}"></span>${i+1}</td><td>${on ? esc(c.name) + `<div class="small muted">${signCheck(c.dir)}</div>` : '<span class="muted">·</span>'}</td><td class="mono">${on ? (s < 0 ? '−' : '+') : ''}</td>
       <td class="mono small">${on ? convText(c) : ''}</td><td class="r mono small">${on ? fmt(mean) : ''}</td><td class="r mono small">${on ? '±' + f5(wc) : ''}</td><td class="r mono small">${on ? '±' + f5(Math.sqrt(ss)) : ''}</td></tr>`; }).join('');
-  let h = `<div class="panel pad stack teach" id="teachPanel"><div class="row" style="justify-content:space-between"><h3>${ROLES[me().role].staff ? 'Teach' : 'Step through solution'}</h3><span class="small muted">Step ${step} of ${n + 1}</span></div>
+  let h = `<div class="panel pad stack teach" id="teachPanel"><div class="row" style="justify-content:space-between"><h3>${ROLES[me().role].staff ? 'Teach' : 'Step through solution'}</h3><span class="small muted">Step ${step} of ${n + 1 + F}</span></div>
+    ${F ? `<div class="msg ${step >= 1 ? 'info' : ''}" style="${step >= 1 ? '' : 'opacity:.45'}"><b>Float first.</b> Push the parts toward ${P.float.dir === '+' ? '+' : '−'}${axisWord(P)} before building the loop${step >= 1 && P.float.note ? `: ${esc(P.float.note)}` : '.'} With every part pushed one way, the clearance collects in the gap you're analyzing, and each contact face becomes a face the loop can run through.</div>` : ''}
     <div class="tblwrap"><table class="tbl"><thead><tr><th>#</th><th>Description</th><th>Dir</th><th>Nominal → mean ± equal</th><th class="r">Running mean Σ</th><th class="r">Running WC Σ|t|</th><th class="r">Running RSS √Σt²</th></tr></thead><tbody>${lines}</tbody></table></div>`;
-  if (step === 0) h += `<p class="small muted" style="margin:0">Each Next reveals one row: its vector on the model, its face tint and its line here. Unequal tolerances are converted to mean nominal ± equal first.</p>`;
-  if (step > n){
+  if (step === 0) h += `<p class="small muted" style="margin:0">${F ? 'Step 1 pushes the parts to one side. ' : ''}Each Next reveals one row: its vector on the model, its face tint and its line here. Unequal tolerances are converted to mean nominal ± equal first. ${SIGN_Q}</p>`;
+  if (step > n + F){
     const R = stackResults(P);
     h += `<div class="math">Mean gap = Σ(± means) = <b>${fmt(R.r.mean)}</b>${isFinite(R.lo) || isFinite(R.hi) ? ` · Requirement ${isFinite(R.lo) ? fmt(R.lo) : '—'} to ${isFinite(R.hi) ? fmt(R.hi) : '—'}` : ''}<br>${
       R.rows.map(x => `${x.name}: ±${f5(x.half)} → ${fmt(x.mn)} to ${fmt(x.mx)}${x.checked ? ` · <b class="${x.pass ? 'okc' : 'failc'}">${x.pass ? 'PASS' : 'FAIL'}</b>` : ''}`).join('<br>')}<br><span class="small">WC = Σ|t| · RSS = √Σt² · MRSS = min(f·RSS, WC)</span></div>`;
   }
-  h += `<div class="teachbar row"><button class="btn sm" type="button" data-act="tBack" ${step === 0 ? 'disabled' : ''}>← Back</button><button class="btn sm primary" type="button" data-act="tNext" ${step > n ? 'disabled' : ''}>Next →</button><button class="btn sm" type="button" data-act="tAll">Show all</button><button class="btn sm" type="button" data-act="tReset">Reset</button><span style="flex:1"></span><button class="btn sm" type="button" data-act="tClose">Close</button></div>
+  h += `<div class="teachbar row"><button class="btn sm" type="button" data-act="tBack" ${step === 0 ? 'disabled' : ''}>← Back</button><button class="btn sm primary" type="button" data-act="tNext" ${step > n + F ? 'disabled' : ''}>Next →</button><button class="btn sm" type="button" data-act="tAll">Show all</button><button class="btn sm" type="button" data-act="tReset">Reset</button><span style="flex:1"></span><button class="btn sm" type="button" data-act="tClose">Close</button></div>
     <p class="small muted" style="margin:0">Keyboard: ← / →. Read-only: stepping through doesn't change any score.</p></div>`;
   return h;
 }
@@ -1071,8 +1097,9 @@ function canTeach(u, it){
 function loopOptsFor(u){
   if (UI.tab === 'creator') return {upTo: null, gap: true};
   const it = UI.play.preview ? UI.pc.draft : item(UI.play.id); if (!it || !isModelStack(it.problem)) return null;
-  const n = playP(it).dims.chain.length;
-  if (UI.teach.on && canTeach(u, it)) return {upTo: Math.min(UI.teach.step, n), gap: UI.teach.step > n};
+  const PP = playP(it), n = PP.dims.chain.length, F = floatOn(PP) ? 1 : 0;
+  if (UI.teach.on && canTeach(u, it)) return {upTo: Math.max(0, Math.min(UI.teach.step - F, n)), gap: UI.teach.step > n + F, float: F && UI.teach.step >= 1};
+  if (it.problem.ptype === 'loop' && UI.play.result == null) return {upTo: null, gap: true};   // the student's own chain, drawn live
   if (it.problem.showLoopBeforeSubmit || canTeach(u, it)) return {upTo: null, gap: true};
   return null;
 }
@@ -1139,6 +1166,44 @@ function randEditor(P){
 }
 const playBase = it => it && it.problem;
 const playP = it => UI.play.inst || playBase(it);
+
+
+/* ---- C5: "Find the loop" ---- */
+// The student builds the chain by picking From/To faces and a sign for each contributor. Graded against the
+// author's chain: a contributor counts when its two faces match a key row (either order); its sign must match too.
+function studentLoopP(P, a){
+  const rows = (a.rows || []).filter(r => r.from && r.to && r.from !== r.to);
+  const chain = rows.map((r, i) => { const m = rowModel(P, {faceFrom: r.from, faceTo: r.to}); return {name: 'Your row ' + (i+1), nom: m ? +m.dist.toFixed(5) : 0, up: 0, lo: 0, dir: r.dir === '-' ? '-' : '+', faceFrom: r.from, faceTo: r.to}; });
+  return Object.assign({}, P, {dims: Object.assign({}, P.dims, {chain})});
+}
+function gradeLoop(P, a){
+  const key = P.dims.chain, rows = (a.rows || []).filter(r => r.from && r.to && r.from !== r.to), used = new Set();
+  const same = (r, k) => (r.from === k.faceFrom && r.to === k.faceTo) || (r.from === k.faceTo && r.to === k.faceFrom);
+  const fn = id => { const f = faceById(P, id); return f ? esc(f.name) : '—'; };
+  let found = 0, signs = 0;
+  const lines = key.map((k, i) => { const j = rows.findIndex((r, x) => !used.has(x) && same(r, k));
+    if (j < 0) return `✗ Missed: ${fn(k.faceFrom)} → ${fn(k.faceTo)} (${k.dir === '-' ? '−' : '+'})`;
+    used.add(j); found++; const sOK = (rows[j].dir === '-' ? '-' : '+') === (k.dir === '-' ? '-' : '+'); if (sOK) signs++;
+    return `✓ Found: ${fn(k.faceFrom)} → ${fn(k.faceTo)} · sign ${sOK ? '✓' : `✗ should be ${k.dir === '-' ? '−' : '+'} (${signCheck(k.dir)})`}`; });
+  const extra = rows.filter((r, x) => !used.has(x));
+  extra.forEach(r => lines.push(`✗ Not part of this loop: ${fn(r.from)} → ${fn(r.to)}`));
+  const score = key.length ? Math.round(50 * found / (key.length + extra.length) + 50 * signs / key.length) : 0;
+  const S = studentLoopP(P, a), cl = loopClosure(S);
+  lines.push(`<span class="small muted">Your loop: Σ(signed nominals) = ${fmt(cl.sum)}${cl.ok == null ? '' : ` · gap on the model = ${fmt(cl.gap)} · ${cl.ok ? 'closes ✓' : 'does not close ✗'}`}. Score = 50% contributors found (extras count against) + 50% signs right.</span>`);
+  return {score, html: lines.join('<br>')};
+}
+function loopBuilder(P){
+  const a = UI.play.ans, faces = stackFaces(P), fo = [['', 'Pick a face…']].concat(faces.map(f => [f.id, f.name]));
+  const sel = (i, k, v) => `<select id="lr-${k}-${i}" data-lr="${i}.${k}" style="max-width:200px">${fo.map(([id, t]) => `<option value="${esc(id)}" ${id === v ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>`;
+  const n = P.dims.chain.length;
+  return `<div class="msg info">Gap: <b>${esc((faceById(P, P.gap.faceFrom) || {}).name || '—')}</b> → <b>${esc((faceById(P, P.gap.faceTo) || {}).name || '—')}</b>. Build the chain of dimensions that controls it.${P.loopShowCount ? ` There are <b>${n}</b> contributors.` : ''}</div>
+    <div class="tblwrap"><table class="tbl"><thead><tr><th>#</th><th>From face</th><th>To face</th><th>Sign</th><th class="r">Length on model</th><th></th></tr></thead><tbody>${
+      (a.rows || []).map((r, i) => { const m = r.from && r.to ? rowModel(P, {faceFrom: r.from, faceTo: r.to}) : null;
+        return `<tr data-lrow="${i}"><td class="mono small"><span class="sw" style="background:${rowColor(i)}"></span>${i+1}</td><td>${sel(i, 'from', r.from)}</td><td>${sel(i, 'to', r.to)}</td>
+          <td><select id="lr-dir-${i}" data-lr="${i}.dir"><option value="+" ${r.dir !== '-' ? 'selected' : ''}>+ opens the gap</option><option value="-" ${r.dir === '-' ? 'selected' : ''}>− closes the gap</option></select></td>
+          <td class="r mono small">${m ? fmt(m.dist) : ''}</td><td class="r"><button class="btn sm danger" type="button" data-act="lrDel" data-i="${i}" aria-label="Remove row ${i+1}">×</button></td></tr>`; }).join('')}</tbody></table></div>
+    <div class="row"><button class="btn sm" type="button" data-act="lrAdd">Add contributor</button><span class="small muted">${SIGN_Q} Your vectors draw on the model as you pick faces.</span></div>`;
+}
 
 /* ---- Problem creator (Owner, Admin, Creator-Instructor) ---- */
 function getPath(o, path){ return path.split('.').reduce((a,k) => a == null ? a : a[k], o); }
@@ -1221,18 +1286,22 @@ function viewCreator(u){
     h += `<span class="small muted">Rule checks come from the project's verified reference (control table, §2). They catch rule breaks, not design intent.</span></div>`;
   }
   // 6 problem
-  const types = (sh === 'stack' || sh === 'assembly') ? ['stack'] : ['accept','errors','fcf','stack'];
+  const types = sh === 'stack' ? ['stack'] : sh === 'assembly' ? ['stack','loop'] : ['accept','errors','fcf','stack','loop'];
   if (!types.includes(P.ptype)) P.ptype = types[0];
   ensureStackModel(P);
   h += `<div class="panel pad stack"><h3>${sh === 'stack' || sh === 'assembly' ? '3' : '6'} · Problem</h3><div class="row">${inSel('problem.ptype', P.ptype, types.map(t => [t, PTYPES[t]]), 'Students will')}</div>
     <label class="fld">What students read<textarea id="${bid('problem.prompt')}" data-bind="problem.prompt">${esc(P.prompt)}</textarea></label>`;
-  if (isModelStack(P)) h += `<h3 style="margin-top:6px">Stack on the part</h3>` + chainEditor(P);
+  if (isModelStack(P)) h += `<h3 style="margin-top:6px">${P.ptype === 'loop' ? 'Answer key: the loop students must find' : 'Stack on the part'}</h3>` + chainEditor(P);
   h += answerSetup(P) + randEditor(P) + whyEditor(P) + `</div>`;
   h += `<div class="row">${pc.isNew ? '' : `<button class="btn danger" type="button" data-act="pcDelete">${UI.confirm === 'pdel' ? 'Click again to delete this problem' : 'Delete problem'}</button>`}<span style="flex:1"></span><button class="btn" type="button" data-act="pcPreview">Preview as student</button><button class="btn primary" type="button" data-act="pcSave">Save</button></div>`;
   h += `</div><div class="cside"><div class="panel"><div id="viewerSlot" class="vslot"></div><div class="vbar"><span class="small muted">${sh === 'stack' ? 'Items laid end to end from the start line, on the side you chose. Numbers match the table.' : isModelStack(P) ? 'Loop vectors above the part, one color per row. Hover a row or a vector to highlight it.' : sh === 'prism' && P.view === '2d' ? '2D top view · drag to pan' : 'Drag to rotate · scroll to zoom'}</span><button class="btn sm" type="button" data-act="viewReset">Reset view</button></div></div></div></div>`;
   return h;
 }
 function answerSetup(P){
+  if (P.ptype === 'loop'){
+    const fn = id => { const f = faceById(P, id); return f ? esc(f.name) : '—'; };
+    return `<div class="math">Answer key (hidden from students): ${P.dims.chain.length} contributors<br>${P.dims.chain.map((c, i) => `${i+1}. ${fn(c.faceFrom)} → ${fn(c.faceTo)} · ${c.dir === '-' ? '−' : '+'} · ${fmt(+c.nom)}`).join('<br>')}<br>Graded: 50% contributors found (a face pair matches in either order; extra rows count against) + 50% signs right. Make sure each dimension has only one sensible face pair.</div>`;
+  }
   if (P.ptype === 'stack'){
     P.ans = P.ans || {}; if (!P.ans.ask) P.ans.ask = 'wcMin'; if (P.ans.tol == null) P.ans.tol = .0005;
     const r = evalStack(P.dims.chain, P.mrssF), key = ASK[P.ans.ask][1](r);
@@ -1279,7 +1348,7 @@ function viewPlay(u){
   let h = `<div class="pagehead"><div><span class="small muted mono">${pl.preview ? 'PREVIEW · ' : ''}${it.id.toUpperCase()} · ${PTYPES[P.ptype]}</span><h2>${esc(it.title)}</h2>${!pl.preview && best != null ? `<p>Best score so far: ${best}%</p>` : ''}</div>
     <div class="row">${canTeach(u, it) && !UI.teach.on ? `<button class="btn primary" type="button" data-act="tOpen">${ROLES[u.role].staff ? 'Teach' : 'Step through solution'}</button>` : ''}${randOn ? `<button class="btn" type="button" data-act="tryAnother">Try another</button>` : ''}<button class="btn" type="button" data-act="playBack">${pl.preview ? 'Back to editor' : 'Back to problems'}</button></div></div>${randOn ? `<p class="small muted" style="margin:-6px 0 10px">The numbers in this problem are drawn at random. <b>Try another</b> gives a fresh set; your best score is kept.</p>` : ''}`;
   h += `<div class="creator"><div class="stack">${UI.teach.on && canTeach(u, it) ? teachHTML(P) : ''}<div class="panel pad stack"><h3>Problem</h3><p style="margin:0">${esc(P.prompt)}</p>${playForm(P)}</div>
-    <div class="panel pad stack"><h3>${P.ptype === 'stack' ? 'Stack data' : 'Drawing data'}</h3>${drawingTable(P, P.ptype === 'fcf' ? P.ans.feat : null)}</div></div>
+    <div class="panel pad stack"><h3>${P.ptype === 'stack' || P.ptype === 'loop' ? 'Stack data' : 'Drawing data'}</h3>${drawingTable(P, P.ptype === 'fcf' ? P.ans.feat : null)}</div></div>
     <div class="cside"><div class="panel"><div id="viewerSlot" class="vslot"></div><div class="vbar"><span class="small muted">${P.shape === 'stack' ? 'Items laid end to end from the start line, on the side you chose. Numbers match the table.' : isModelStack(P) ? (loopOptsFor(u) ? 'Loop vectors, one color per row. Hover a row or vector to highlight it.' : 'Find the loop yourself. The vectors appear after you submit.') : 'Drag to rotate · scroll to zoom'}</span><button class="btn sm" type="button" data-act="viewReset">Reset view</button></div></div></div></div>`;
   return h;
 }
@@ -1315,11 +1384,12 @@ function playForm(P){
           <td><input type="text" inputmode="decimal" id="ws-l-${i}" data-ws="${i}.lo" value="${esc(w.lo)}" placeholder="−.000" style="width:72px"></td>
           <td class="r mono small">${live ? fmt(m) : ''}</td><td class="r mono small">${live ? fmt(Math.abs(t)) : ''}</td></tr>`; }).join('')}</tbody>
         <tfoot><tr><td colspan="6" class="r small muted">Mean gap (Σ ± means) · WC (Σ|t|) · RSS (√Σt²)</td><td class="r mono">${used ? fmt(r.mean) : ''}</td><td class="r mono small">${used ? `±${fmt(r.wc)} · ±${fmt(r.rss)}` : ''}</td></tr></tfoot></table></div>
-        <p class="small muted" style="margin:0">Mean = nominal + (upper + lower)/2. Equal ± = (upper − lower)/2.</p>`;
+        <p class="small muted" style="margin:0">Mean = nominal + (upper + lower)/2. Equal ± = (upper − lower)/2. ${SIGN_Q}</p>`;
     }
     h += `<div class="row"><button class="btn sm" type="button" data-act="wsAdd">Add row</button><button class="btn sm" type="button" data-act="wsClear">Clear worksheet</button><span class="small muted">Switching format converts what you've entered. The totals are scratch work; only the final answer is graded.</span></div>
       <label class="fld" style="max-width:260px"><b style="color:var(--ink)">Final answer: ${ASK[P.ans.ask][0]} (in)</b><input type="text" inputmode="decimal" id="pa-val" data-ans="val" value="${esc(a.val || '')}" style="width:160px;font-size:16px"></label></div>`;
   }
+  if (P.ptype === 'loop') h += loopBuilder(P);
   if (P.ptype === 'accept'){
     const f = P.features.find(x => x.id === P.ans.feat), c = f.fcf, d = FEAT[f.kind], m = P.ans.meas;
     const lines = [];
@@ -1349,6 +1419,7 @@ function playForm(P){
   return h + '</form>';
 }
 function grade(P, a){
+  if (P.ptype === 'loop') return gradeLoop(P, a);
   if (P.ptype === 'stack'){
     const key = ASK[P.ans.ask][1](evalStack(P.dims.chain, P.mrssF)), v = parseFloat(a.val), ok = Math.abs(v - key) <= (+P.ans.tol || .0005) + 1e-9;
     const r = evalStack(P.dims.chain, P.mrssF);
@@ -1908,6 +1979,7 @@ function render(){
   if (!u) return;
   if (u && u.status === 'active' && document.getElementById('viewerSlot')){
     let P = UI.tab === 'creator' && UI.pc.draft ? UI.pc.draft.problem : UI.tab === 'play' ? playP(UI.play.preview ? UI.pc.draft : item(UI.play.id)) : null;
+    if (P && UI.tab === 'play' && P.ptype === 'loop' && UI.play.result == null && !UI.teach.on) P = studentLoopP(P, UI.play.ans);
     if (P && UI.tab === 'play' && P.shape === 'stack' && UI.play.ans.orient) P = Object.assign({}, P, {dims: Object.assign({}, P.dims, {orient: UI.play.ans.orient})});
     if (P) mountViewer(P, {ctx: UI.tab === 'creator' ? 'c' + (UI.pc.draft.id||'new') : 'p' + (UI.play.preview ? 'prev' : UI.play.id), reframe: UI.reframe, loop: loopOptsFor(u)}); UI.reframe = false;
   }
@@ -2011,6 +2083,8 @@ document.addEventListener('click', ev => {
   if (a === 'signout'){ UI.signupEmail = ''; UI.landingMsg = null; UI.signupStep = null; signOut(auth).then(() => toast('Signed out.')); return; }
   if (a === 'closeViewer'){ return closeViewer(); }
   if (a === 'starter' && can(u,'editContent')){ return act(() => { DB.catalog = starterCatalog(); }, 'Starter content loaded as drafts. Upload each lesson page, then publish.'); }
+  if (a === 'lrAdd'){ (UI.play.ans.rows = UI.play.ans.rows || []).push({from:'', to:'', dir:'+'}); return render(); }
+  if (a === 'lrDel'){ UI.play.ans.rows.splice(+b.dataset.i, 1); UI.play.result = null; return render(); }
   if (a === 'tryAnother'){ const it = UI.play.preview ? UI.pc.draft : item(UI.play.id); if (!it) return; const inst = makeInstance(it.problem);
     UI.play.inst = inst; UI.play.ans = blankAns(inst || it.problem); UI.play.result = null; UI.teach = {on:false, step:0}; toast('New numbers drawn.'); return render(); }
   if (a === 'pcRandAdd' && UI.pc.draft){ const P = UI.pc.draft.problem; (P.rand = P.rand || []).push({path:'', min:0, max:0, step:.0005}); return render(); }
@@ -2117,7 +2191,7 @@ function wsConvert(ws, to){
         o.dir = mid < 0 ? '-' : '+'; o.nom = String(+Math.abs(mid).toFixed(5)); o.up = String(+half.toFixed(5)); o.lo = String(+(-half).toFixed(5)); } }
     return o; });
 }
-function blankAns(P){ return P && P.ptype === 'stack' ? {val:'', fmt:'nominal', orient: (P.dims && P.dims.orient) || 'v', ws: Array.from({length: WS_ROWS}, wsRow)} : {}; }
+function blankAns(P){ if (P && P.ptype === 'loop') return {rows: [{from:'', to:'', dir:'+'}, {from:'', to:'', dir:'+'}]}; return P && P.ptype === 'stack' ? {val:'', fmt:'nominal', orient: (P.dims && P.dims.orient) || 'v', ws: Array.from({length: WS_ROWS}, wsRow)} : {}; }
 function readField(el){ const k = el.dataset.kind; if (k === 'bool') return el.checked; if (k === 'num'){ const v = parseFloat(el.value); return isNaN(v) ? 0 : v; } return el.value; }
 function liveWs(){
   const ws = UI.play.ans.ws, tb = document.querySelector('table.ws tbody'); if (!tb) return;
@@ -2142,6 +2216,7 @@ document.addEventListener('input', ev => {
 document.addEventListener('change', ev => {
   const el = ev.target, u = me();
   if (el.dataset.ws){ const [i,k] = el.dataset.ws.split('.'); const row = UI.play.ans.ws[+i]; if (row) row[k] = el.value; render(); rebindFocus(el.id); return; }
+  if (el.dataset.lr){ const [i,k] = el.dataset.lr.split('.'); const row = (UI.play.ans.rows || [])[+i]; if (row) row[k] = el.value; UI.play.result = null; render(); return; }
   if (el.dataset.bind && UI.pc.draft){ setPath(UI.pc.draft, el.dataset.bind, readField(el));
     const fm = el.dataset.bind.match(/^problem\.dims\.chain\.(\d+)\.face(From|To)$/); if (fm) autoFromFaces(UI.pc.draft.problem, +fm[1]);
     if (/^problem\.(ptype|model\.axis)$/.test(el.dataset.bind) || /^problem\.model\.bodies\./.test(el.dataset.bind)) UI.reframe = true;
@@ -2173,10 +2248,10 @@ document.addEventListener('keydown', ev => { if (ev.key === 'Escape' && !$('view
     if (ev.key === 'ArrowRight'){ ev.preventDefault(); teachGo('tNext'); } if (ev.key === 'ArrowLeft'){ ev.preventDefault(); teachGo('tBack'); } } });
 function teachGo(a){
   const it = UI.play.preview ? UI.pc.draft : item(UI.play.id); if (!it || !isModelStack(it.problem)) return;
-  const n = it.problem.dims.chain.length, t = UI.teach;
-  if (a === 'tNext') t.step = Math.min(n + 1, t.step + 1); if (a === 'tBack') t.step = Math.max(0, t.step - 1);
-  if (a === 'tAll') t.step = n + 1; if (a === 'tReset') t.step = 0;
-  render(); if (t.step >= 1 && t.step <= n) setLoopHL(t.step - 1);
+  const PP = playP(it), n = PP.dims.chain.length, F = floatOn(PP) ? 1 : 0, t = UI.teach, last = n + 1 + F;
+  if (a === 'tNext') t.step = Math.min(last, t.step + 1); if (a === 'tBack') t.step = Math.max(0, t.step - 1);
+  if (a === 'tAll') t.step = last; if (a === 'tReset') t.step = 0;
+  render(); if (t.step - F >= 1 && t.step - F <= n) setLoopHL(t.step - F - 1);
 }
 // hovering a table row highlights its vector and faces (and the reverse, in onViewerMove)
 document.addEventListener('mouseover', ev => {
@@ -2185,7 +2260,7 @@ document.addEventListener('mouseover', ev => {
 });
 
 /* expose pure logic for testing */
-window.__access = {makeInstance, randValue, randFields, activeRand, whyAfter, keyText, loopSegments, stackFaces, loopClosure, rowWarnings, stackResults, convText, can, canOpen, ROLES, evalStack, evalAccept, checkFCF, grade, template, sampleProblems};
+window.__access = {gradeLoop, studentLoopP, signCheck, makeInstance, randValue, randFields, activeRand, whyAfter, keyText, loopSegments, stackFaces, loopClosure, rowWarnings, stackResults, convText, can, canOpen, ROLES, evalStack, evalAccept, checkFCF, grade, template, sampleProblems};
 
 // ---- start-up: finish an email-link sign-in if this page was opened from one, then follow auth state ----
 if (isSignInWithEmailLink(auth, location.href)){
