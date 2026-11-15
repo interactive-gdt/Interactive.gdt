@@ -415,7 +415,7 @@ function fcfIssues(P, f){
   const ch = CHARS[c.char], cat = ch.cat, isFOS = !!d.fos, ds = (c.datums || []).filter(Boolean);
   if (cat === 'removed') add('removed', 'Concentricity and symmetry were removed in Y14.5-2018. Use position, runout or profile.');
   if (cat === 'form' && ds.length) add('formDatum', 'Form tolerances never reference datums.');
-  if ((cat === 'orient' || cat === 'runout' || cat === 'location') && !ds.length) add('needDatum', `${ch.label} needs at least one datum reference.`);
+  if ((cat === 'orient' || cat === 'runout' || cat === 'location') && !ds.length) add('needDatum', `${ch.label} needs at least one datum reference.` + (c.char === 'position' ? ' (Y14.5-2009 allowed an exception for coaxial holes; this checker doesn\'t model it.)' : ''));
   if (c.mod === 'MMC' || c.mod === 'LMC'){
     if (cat === 'profile' || cat === 'runout' || c.char === 'circularity' || c.char === 'cylindricity' || cat === 'removed') add('mod', `${ch.label} can't take Ⓜ or Ⓛ on its tolerance.`);
     else if (!isFOS) add('mod', 'Ⓜ / Ⓛ only applies to a feature of size. This feature has no size.');
