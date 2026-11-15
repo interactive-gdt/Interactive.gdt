@@ -196,6 +196,20 @@ table.ws th .hint{font:500 11px var(--font-mono);color:var(--accent);letter-spac
 #viewer[hidden]{display:none}
 #viewer .vbar{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line, rgba(0,0,0,.12));background:var(--surface)}
 #viewer .vbar .spacer{flex:1}
+.vov{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.vlbl{position:absolute;left:0;top:0;font:500 12px var(--font-mono);color:var(--ink);background:color-mix(in srgb,var(--surface) 88%,transparent);border:1.5px solid;border-radius:6px;padding:1px 6px;white-space:nowrap;display:flex;align-items:center;gap:4px;transition:opacity .15s}
+.vlbl.dim{opacity:.3}
+.sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.sw.gap{background:repeating-linear-gradient(90deg,#6b737a 0 3px,transparent 3px 5px);border:1px solid #6b737a}
+.vlbl .sw{margin-right:0}
+tr[data-lrow].hl td{background:color-mix(in srgb,var(--accent) 9%,transparent)}
+tr.hidden-step td{color:var(--muted)}
+.why{margin-top:8px;padding:8px 10px;border-left:3px solid color-mix(in srgb,var(--accent) 45%,var(--line));background:color-mix(in srgb,var(--accent) 5%,transparent);border-radius:0 6px 6px 0;font-size:14px;line-height:1.55}
+.whyi{color:var(--muted)}
+.row.nowrap{flex-wrap:nowrap;gap:4px}
+.okc{color:var(--pass)} .failc{color:var(--fail)}
+.teach .teachbar{gap:6px}
+@media (max-width:700px){ .teach .teachbar{position:sticky;bottom:0;z-index:5;background:var(--surface);border-top:1px solid var(--line);padding:8px 0;margin:0 -2px} }
 #viewer iframe{flex:1;border:0;width:100%;background:#fff}
 .upl{position:relative;overflow:hidden;display:inline-flex;align-items:center;cursor:pointer}
 .upl input{position:absolute;inset:0;opacity:0;cursor:pointer}
@@ -288,13 +302,15 @@ const SHAPES = {
   stack:  {label:'1D stack chain', dims:[]},
   prism:  {label:'Plate / block', dims:[['L','Length (X)'],['W','Width (Y)'],['T','Thickness (Z)']]},
   shaft:  {label:'Turned shaft', dims:[]},
-  bracket:{label:'Sheet-metal bracket', dims:[['L','Length'],['W','Base depth'],['H','Flange height'],['t','Sheet thickness']]}
+  bracket:{label:'Sheet-metal bracket', dims:[['L','Length'],['W','Base depth'],['H','Flange height'],['t','Sheet thickness']]},
+  assembly:{label:'Assembly (stack on part)', dims:[]}
 };
 const FACES = {
   prism:  {bottom:'Bottom face', top:'Top face', left:'Left face', right:'Right face', front:'Front face', back:'Back face'},
   shaft:  {leftEnd:'Left end face', rightEnd:'Right end face'},
   bracket:{baseBottom:'Base, bottom face', flangeBack:'Flange, back face', leftEdge:'Left edge', frontEdge:'Front edge'},
-  stack:  {}
+  stack:  {},
+  assembly:{}
 };
 const PLBL = {x:'X from left', y:'Y from front', depth:'Depth', cbDia:'C-bore Ø', cbDepth:'C-bore depth', len:'Length', w:'Width', l:'Length', z:'From left end', face:'Face', u:'Along length', v:'From front/base', dia:'Dia', height:'Height'};
 const FEAT = {
@@ -328,7 +344,7 @@ const ASK = {
   wcMin:['Worst-case minimum gap', r => r.mean - r.wc],
   wcMax:['Worst-case maximum gap', r => r.mean + r.wc],
   rssMin:['RSS minimum gap', r => r.mean - r.rss],
-  mrssMin:['Modified RSS (×1.5) minimum gap', r => r.mean - r.mrss],
+  mrssMin:['Modified RSS minimum gap', r => r.mean - r.mrss],
   mean:['Mean gap', r => r.mean]
 };
 const ORIENT = {v:'Vertical start line (stack runs left / right)', h:'Horizontal start line (stack runs up / down)'};
@@ -339,12 +355,12 @@ const sgn = v => (v < -5e-6 ? '−' : '+') + Math.abs(v).toFixed(4).replace(/^0(
 const clone = o => JSON.parse(JSON.stringify(o));
 
 /* ---- math (verified-reference §1 and §4) ---- */
-function evalStack(chain){
+function evalStack(chain, f){
   let mean = 0, wc = 0, ss = 0;
   chain.forEach(c => { const U = +c.up || 0, Lo = +c.lo || 0, m = (+c.nom || 0) + (U + Lo)/2, t = (U - Lo)/2;
     mean += (c.dir === '-' ? -1 : 1) * m; wc += Math.abs(t); ss += t*t; });
   const rss = Math.sqrt(ss);
-  return {mean, wc, rss, mrss: Math.min(1.5*rss, wc)};
+  return {mean, wc, rss, mrss: Math.min((+f || 1.5)*rss, wc)};
 }
 function limits(f){ const s = f.size; return {lo: s[0] - s[2], hi: s[0] + s[1]}; }
 function mmcOf(f){ const L = limits(f); return FEAT[f.kind].fos === 'int' ? L.lo : L.hi; }
@@ -399,6 +415,23 @@ function template(shape){
       {name:'Retaining ring', nom:.0625, up:.002, lo:-.002, dir:'-'}];
     P.ans = {ask:'wcMin', tol:.0005};
     P.prompt = 'Find the worst-case minimum gap between the retaining ring and the end of the housing. Answer in inches to 4 places.';
+  }
+  if (shape === 'assembly'){
+    P.ptype = 'stack';
+    P.model = {base:'assembly', axis:'x', bodies:[
+      {id:'B1', name:'Housing', kind:'tube', x0:0, len:.950, dia:1.2, idia:.8, w:1, h:1},
+      {id:'B2', name:'Housing floor', kind:'cylinder', x0:-.15, len:.15, dia:1.2, idia:0, w:1, h:1},
+      {id:'B3', name:'Spacer', kind:'tube', x0:0, len:.500, dia:.78, idia:.42, w:1, h:1},
+      {id:'B4', name:'Bearing', kind:'tube', x0:.5, len:.375, dia:.78, idia:.3, w:1, h:1},
+      {id:'B5', name:'Retaining ring', kind:'tube', x0:.875, len:.0625, dia:.78, idia:.6, w:1, h:1}]};
+    P.dims.chain = [
+      {name:'Housing depth', nom:.950, up:.005, lo:0, dir:'+', faceFrom:'B2.R', faceTo:'B1.R'},
+      {name:'Spacer', nom:.500, up:.002, lo:-.002, dir:'-', faceFrom:'B3.R', faceTo:'B3.L'},
+      {name:'Bearing width', nom:.375, up:0, lo:-.003, dir:'-', faceFrom:'B4.R', faceTo:'B4.L'},
+      {name:'Retaining ring', nom:.0625, up:.002, lo:-.002, dir:'-', faceFrom:'B5.R', faceTo:'B5.L'}];
+    P.gap = {faceFrom:'B5.R', faceTo:'B1.R'}; P.req = {min:.005, max:.030}; P.mrssF = 1.5; P.showLoopBeforeSubmit = false;
+    P.ans = {ask:'wcMin', tol:.0005};
+    P.prompt = 'Find the worst-case minimum gap between the retaining ring and the housing lip. Answer in inches to 4 places.';
   }
   if (shape === 'prism'){
     P.dims = {L:3, W:2, T:.5};
@@ -495,6 +528,9 @@ function ensureViewer(){
   const el = document.createElement('div'); el.className = 'pviewer';
   const r = new THREE.WebGLRenderer({antialias:true}); r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   el.appendChild(r.domElement);
+  const ov = document.createElement('div'); ov.className = 'vov'; el.appendChild(ov);
+  r.domElement.addEventListener('pointermove', ev => onViewerMove(ev));
+  r.domElement.addEventListener('click', ev => onViewerClick(ev));
   const scene = new THREE.Scene();
   scene.add(new THREE.HemisphereLight(0xffffff, 0x5a6672, 0.85));
   const sun = new THREE.DirectionalLight(0xffffff, 0.7); sun.position.set(4,7,5); scene.add(sun);
@@ -503,8 +539,8 @@ function ensureViewer(){
   const ortho = new THREE.OrthographicCamera(-1,1,1,-1,0.01,200);
   const cp = new THREE.OrbitControls(persp, r.domElement);
   const co = new THREE.OrbitControls(ortho, r.domElement); co.enableRotate = false; co.enabled = false;
-  Object.assign(VIEW, {el, r, scene, persp, ortho, cp, co, group:null, key:null, mode:'3d', box:null});
-  const draw = () => VIEW.r.render(VIEW.scene, VIEW.mode === '2d' ? VIEW.ortho : VIEW.persp);
+  Object.assign(VIEW, {el, ov, r, scene, persp, ortho, cp, co, group:null, key:null, mode:'3d', box:null, loop:null});
+  const draw = () => { scaleFixed(); VIEW.r.render(VIEW.scene, VIEW.mode === '2d' ? VIEW.ortho : VIEW.persp); placeLabels(); };
   VIEW.draw = draw; cp.addEventListener('change', draw); co.addEventListener('change', draw);
   if ('ResizeObserver' in window) new ResizeObserver(() => resizeViewer()).observe(el);
 }
@@ -526,13 +562,14 @@ function mountViewer(P, opts){
   ensureViewer(); slot.appendChild(VIEW.el);
   const t = tokenColors(); VIEW.r.setClearColor(new THREE.Color(t.bg), 1);
   if (VIEW.group){ VIEW.scene.remove(VIEW.group); VIEW.group.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
-  VIEW.group = buildModel(P, t, opts || {}); VIEW.scene.add(VIEW.group);
+  VIEW.group = buildModel(P, t, opts || {}); VIEW.scene.add(VIEW.group); mountLoopUI(VIEW.group.userData.loop);
   VIEW.box = new THREE.Box3().setFromObject(VIEW.group);
   VIEW.mode = (P.shape === 'stack' || (P.shape === 'prism' && P.view === '2d')) ? '2d' : '3d';
   VIEW.front = P.shape === 'stack';
   VIEW.cp.enabled = VIEW.mode === '3d'; VIEW.co.enabled = VIEW.mode === '2d';
   const key = (opts.ctx || '') + '|' + P.shape + '|' + VIEW.mode;
   if (key !== VIEW.key || opts.reframe){ VIEW.key = key; frameView(); }
+  VIEW.r.domElement.style.cursor = UI.pick ? 'crosshair' : '';
   resizeViewer();
 }
 function textSprite(txt, o){
@@ -556,7 +593,7 @@ function buildModel(P, t, opts){
   const mat2 = new THREE.MeshStandardMaterial({color:'#c3c9cc', metalness:.2, roughness:.6});
   const dark = new THREE.MeshStandardMaterial({color:'#3b4349', roughness:.8});
   const edgeM = new THREE.LineBasicMaterial({color:t.ink, transparent:true, opacity:.45});
-  const addMesh = (geo, m, pos) => { const me = new THREE.Mesh(geo, m); if (pos) me.position.set(...pos); g.add(me);
+  const addMesh = (geo, m, pos) => { const me = new THREE.Mesh(geo, m); if (pos) me.position.set(...pos); me.userData.model = true; g.add(me);
     if (m !== dark) { const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo, 28), edgeM); e.position.copy(me.position); e.rotation.copy(me.rotation); g.add(e); } return me; };
   const anchors = {};   // feature id / face -> [pos, normal]
   const D = P.dims || {};
@@ -621,6 +658,7 @@ function buildModel(P, t, opts){
     });
     Object.assign(anchors, {'face:baseBottom':[[L*.5,0,-W*.5],[0,-1,0]], 'face:flangeBack':[[L*.5,H*.5,-W],[0,0,-1]], 'face:leftEdge':[[0,th/2,-W*.5],[-1,0,0]], 'face:frontEdge':[[L*.5,th/2,0],[0,0,1]]});
   }
+  if (P.shape === 'assembly') buildAssembly(P, g, addMesh);
   if (P.shape === 'stack'){
     /* Start-line diagram. Items sit on one side of the start line or the other, laid end to end from the line.
        Vertical line: + items run right, − items run left. Horizontal line: + items run up, − items run down. */
@@ -665,6 +703,7 @@ function buildModel(P, t, opts){
       if (!a) return; const n = new THREE.Vector3(...a[1]).normalize().multiplyScalar(span*.11);
       const sp = textSprite(Lt, {scale:.12}); sp.position.set(a[0][0] + n.x, a[0][1] + n.y, a[0][2] + n.z); g.add(sp); });
   }
+  g.userData.loop = isModelStack(P) && opts.loop ? addLoop(P, g, t, opts.loop) : null;
   return g;
 }
 
@@ -681,6 +720,12 @@ function featWhere(P, f){
 }
 function drawingTable(P, hideId){
   const col = inkColor();
+  if (isModelStack(P)){
+    const fn = id => { const f = faceById(P, id); return f ? esc(f.name) : '—'; }, rq = P.req || {};
+    return `<div class="tblwrap"><table class="tbl"><thead><tr><th>#</th><th>Description</th><th>From face</th><th>To face</th><th class="r">Nominal</th><th class="r">Upper</th><th class="r">Lower</th></tr></thead><tbody>${
+      P.dims.chain.map((c,i) => `<tr data-lrow="${i}"><td class="mono small"><span class="sw" style="background:${rowColor(i)}"></span>${i+1}</td><td>${esc(c.name)}</td><td class="small">${fn(c.faceFrom)}</td><td class="small">${fn(c.faceTo)}</td><td class="r mono">${fmt(+c.nom)}</td><td class="r mono">${sgn(+c.up)}</td><td class="r mono">${sgn(+c.lo)}</td></tr>`).join('')}</tbody></table></div>
+      <p class="small muted" style="margin:6px 0 0">Gap: ${fn(P.gap && P.gap.faceFrom)} → ${fn(P.gap && P.gap.faceTo)}.${rq.min !== '' && rq.min != null ? ` Requirement ${fmt(+rq.min)} to ${fmt(+rq.max)}.` : ''} Stack axis: ${(axisOpts(P).find(([k]) => k === P.model.axis) || ['','X'])[1]}.</p>`;
+  }
   if (P.shape === 'stack'){
     const or = P.dims.orient || 'v';
     return `<div class="tblwrap"><table class="tbl"><thead><tr><th>#</th><th>Item</th><th>Side of start line</th><th class="r">Nominal</th><th class="r">Upper</th><th class="r">Lower</th></tr></thead><tbody>${
@@ -692,6 +737,408 @@ function drawingTable(P, hideId){
     P.features.map(f => { const dl = datumOf(P,f); return `<tr><td class="mono small">${f.id}${dl.length ? ` <span class="dtag">${dl.join(' ')}</span>` : ''}</td><td>${FEAT[f.kind].label}<br><span class="small muted">${FEAT[f.kind].proc}</span></td><td class="small">${esc(featWhere(P,f))}</td><td class="mono small">${f.size ? sizeText(f) : '—'}</td><td>${f.id === hideId ? '<span class="small muted">You write this one</span>' : fcfSVG(f.fcf, col)}</td></tr>`; }).join('')}</tbody></table></div>
     <p class="small muted" style="margin:6px 0 0">Datums: ${ds || 'none defined'}. Generic part.</p>`;
 }
+
+/* ===================== Stack on part + Teach mode (spec §10) ===================== */
+// A "stack on part" is a Calculate-a-stack problem built on a model (assembly, plate, shaft or bracket).
+// Each chain row is tied to a From face and a To face along one stack axis. 1D only: every vector is
+// parallel to the stack axis. Math is verified-reference §1 only (evalStack).
+const LOOP_COLORS = ['#4f86b5','#d0893a','#3f9a80','#c9a43a','#8a72b8','#c4697a','#5aa7cf','#93754a','#6a9a52','#b05a4e']; // muted Okabe-Ito-style, row order
+const GAP_COLOR = '#6b737a';
+const BODY_KINDS = {block:'Block', cylinder:'Cylinder', tube:'Tube (hollow cylinder)'};
+const isModelStack = P => !!P && P.ptype === 'stack' && P.shape !== 'stack';
+const rowColor = i => LOOP_COLORS[i % LOOP_COLORS.length];
+const f5 = v => (v < -5e-7 ? '−' : '') + Math.abs(v).toFixed(5).replace(/^0(?=\.)/,'');
+function nextBid(P){ return 'B' + ((P.model.bodies || []).reduce((m,b) => Math.max(m, +b.id.slice(1) || 0), 0) + 1); }
+function newBody(P, o){ return Object.assign({id: nextBid(P), name:'Body', kind:'cylinder', x0:0, len:.25, dia:.75, idia:.4, w:.75, h:.75}, o || {}); }
+function axisOpts(P){
+  if (P.shape === 'prism') return [['x','X (length)'],['y','Y (width)'],['z','Z (thickness)']];
+  if (P.shape === 'shaft') return [['x','Shaft axis']];
+  return [['x','X (left to right)']];
+}
+// Make sure a model-based stack problem has everything it needs.
+function ensureStackModel(P){
+  if (!isModelStack(P)) return;
+  P.model = P.model || {};
+  if (P.shape === 'assembly'){ P.model.base = 'assembly'; P.model.bodies = P.model.bodies || []; }
+  else P.model.base = P.shape === 'prism' ? 'plate' : P.shape;
+  if (!axisOpts(P).some(([k]) => k === P.model.axis)) P.model.axis = 'x';
+  P.dims = P.dims || {};
+  if (!Array.isArray(P.dims.chain)) P.dims.chain = [
+    {name:'Dimension 1', nom:1, up:.005, lo:-.005, dir:'+', faceFrom:'', faceTo:''},
+    {name:'Dimension 2', nom:.5, up:.003, lo:-.003, dir:'-', faceFrom:'', faceTo:''}];
+  P.gap = P.gap || {faceFrom:'', faceTo:''};
+  P.req = P.req || {min:'', max:''};
+  if (P.mrssF == null) P.mrssF = 1.5;
+  if (P.showLoopBeforeSubmit == null) P.showLoopBeforeSubmit = false;
+  P.ans = P.ans || {}; if (!ASK[P.ans.ask]) P.ans.ask = 'wcMin'; if (P.ans.tol == null) P.ans.tol = .0005;
+}
+// Named faces along the stack axis: [{id, name, pos, top?, sec?}]. pos is the distance along the axis.
+function stackFaces(P){
+  const F = [], ax = (P.model && P.model.axis) || 'x', D = P.dims || {}, n = v => +v || 0;
+  const add = (id, name, pos, extra) => F.push(Object.assign({id, name, pos: n(pos)}, extra || {}));
+  if (P.shape === 'assembly'){
+    (P.model.bodies || []).forEach(b => { const r = (b.kind === 'block' ? Math.max(n(b.w), n(b.h)) : n(b.dia))/2;
+      const sec = b.kind === 'block' ? [n(b.h), n(b.w)] : [n(b.dia), n(b.dia)];
+      add(b.id + '.L', `${b.name || b.id}, left face`, b.x0, {top: b.kind === 'block' ? n(b.h)/2 : r, sec});
+      add(b.id + '.R', `${b.name || b.id}, right face`, n(b.x0) + n(b.len), {top: b.kind === 'block' ? n(b.h)/2 : r, sec}); });
+  }
+  if (P.shape === 'prism'){
+    const L = n(D.L) || 3, W = n(D.W) || 2, T = n(D.T) || .5;
+    if (ax === 'x'){ add('face:left','Left face',0); add('face:right','Right face',L); }
+    if (ax === 'y'){ add('face:front','Front face',0); add('face:back','Back face',W); }
+    if (ax === 'z'){ add('face:bottom','Bottom face',0); add('face:top','Top face',T); }
+    P.features.forEach(f => { const p = f.params, lab = `${f.id} ${FEAT[f.kind].label.toLowerCase()}`;
+      if (ax === 'x' || ax === 'y'){ const c = ax === 'x' ? p.x : p.y; if (c == null) return;
+        if (f.kind === 'pocket'){ const h = (ax === 'x' ? n(p.l) : n(p.w))/2; add(f.id + '.a', `${lab}, ${ax === 'x' ? 'left' : 'front'} wall`, n(c) - h); add(f.id + '.b', `${lab}, ${ax === 'x' ? 'right' : 'back'} wall`, n(c) + h); }
+        else if (f.kind !== 'surface') add(f.id + '.c', `${lab}, center`, c); }
+      if (ax === 'z'){
+        if (f.kind === 'pocket' || f.kind === 'blind') add(f.id + '.fl', `${lab}, floor`, T - n(p.depth));
+        if (f.kind === 'cbore') add(f.id + '.fl', `${lab}, counterbore floor`, T - n(p.cbDepth));
+        if (f.kind === 'boss' || f.kind === 'rib') add(f.id + '.tp', `${lab}, top`, T + n(p.height)); } });
+  }
+  if (P.shape === 'shaft'){
+    const secs = P.features.filter(f => f.kind === 'dia'); let z = 0;
+    add('face:leftEnd','Left end face',0);
+    secs.forEach((f,i) => { z += Math.max(.05, n(f.params.len)); add(i === secs.length-1 ? 'face:rightEnd' : f.id + '.R', i === secs.length-1 ? 'Right end face' : `Shoulder ${f.id} / ${secs[i+1].id}`, z); });
+    P.features.forEach(f => { const p = f.params;
+      if (f.kind === 'groove'){ add(f.id + '.a', `${f.id} groove, left wall`, p.z); add(f.id + '.b', `${f.id} groove, right wall`, n(p.z) + n(f.size && f.size[0])); }
+      if (f.kind === 'crosshole') add(f.id + '.c', `${f.id} cross hole, center`, p.z); });
+  }
+  if (P.shape === 'bracket'){
+    add('face:leftEdge','Left edge',0); add('face:rightEdge','Right edge', n(D.L) || 3);
+    P.features.forEach(f => { if (f.params && f.params.u != null && f.kind !== 'surface') add(f.id + '.c', `${f.id} ${FEAT[f.kind].label.toLowerCase()}, center`, f.params.u); });
+  }
+  return F;
+}
+const faceById = (P, id) => stackFaces(P).find(f => f.id === id);
+// Editor helpers: model distance, suggested direction, loop closure.
+function rowModel(P, c){ const a = faceById(P, c.faceFrom), b = faceById(P, c.faceTo); if (!a || !b) return null; const d = b.pos - a.pos; return {dist: Math.abs(d), dir: d >= 0 ? '+' : '-'}; }
+function rowWarnings(P, c){
+  const w = [], m = rowModel(P, c); if (!c.faceFrom || !c.faceTo){ w.push('Pick both faces to tie this row to the model.'); return w; }
+  if (!m) { w.push('A face on this row no longer exists on the model. Pick it again.'); return w; }
+  if (c.faceFrom === c.faceTo) w.push('From and To are the same face.');
+  if (Math.abs((+c.nom || 0) - m.dist) > .0005) w.push(`Nominal ${fmt(+c.nom || 0)} differs from the model distance ${fmt(m.dist)} by more than .0005.`);
+  if (m.dist > 1e-9 && (c.dir === '-' ? '-' : '+') !== m.dir) w.push(`Face order says this vector points ${m.dir === '+' ? '+' : '−'}, but the row is set to ${c.dir === '-' ? '−' : '+'}.`);
+  return w;
+}
+function loopClosure(P){
+  const a = faceById(P, P.gap && P.gap.faceFrom), b = faceById(P, P.gap && P.gap.faceTo);
+  const sum = P.dims.chain.reduce((s,c) => s + (c.dir === '-' ? -1 : 1) * (+c.nom || 0), 0);
+  if (!a || !b) return {ok:null, sum};
+  const gap = b.pos - a.pos; return {ok: Math.abs(sum - gap) <= .0005, sum, gap};
+}
+// When a face pick changes, fill the nominal and suggest the direction from the model.
+function autoFromFaces(P, i){ const c = P.dims.chain[i], m = c && rowModel(P, c); if (!m) return; c.nom = +m.dist.toFixed(4); if (m.dist > 1e-9) c.dir = m.dir; }
+
+/* ---- model: assembly bodies ---- */
+function buildAssembly(P, g, addMesh){
+  const n = v => +v || 0, shades = ['#a9b1b7','#c3c9cc','#9aa3a9','#b7bec3','#8f989e','#cfd4d7'];
+  (P.model.bodies || []).forEach((b, i) => {
+    const m = new THREE.MeshStandardMaterial({color: shades[i % shades.length], metalness:.25, roughness:.6, transparent:true, opacity:.55, side:THREE.DoubleSide, depthWrite:false});
+    const len = Math.max(.005, n(b.len)); let geo;
+    if (b.kind === 'block'){ geo = new THREE.BoxGeometry(len, Math.max(.01, n(b.h)), Math.max(.01, n(b.w))); }
+    else {
+      const ro = Math.max(.01, n(b.dia)/2), ri = b.kind === 'tube' ? Math.min(ro - .005, Math.max(0, n(b.idia)/2)) : 0;
+      const pts = ri > 0 ? [new THREE.Vector2(ri,0), new THREE.Vector2(ro,0), new THREE.Vector2(ro,len), new THREE.Vector2(ri,len), new THREE.Vector2(ri,0)]
+                         : [new THREE.Vector2(0,0), new THREE.Vector2(ro,0), new THREE.Vector2(ro,len), new THREE.Vector2(0,len)];
+      geo = new THREE.LatheGeometry(pts, 64); geo.rotateZ(-Math.PI/2); geo.translate(-len/2, 0, 0);
+    }
+    const me = addMesh(geo, m, [n(b.x0) + len/2, 0, 0]); me.renderOrder = 1;
+    const tag = textSprite(b.name || b.id, {box:false, scale:.06}); tag.position.set(n(b.x0) + len/2, -(b.kind === 'block' ? n(b.h)/2 : n(b.dia)/2) - .08, 0); g.add(tag);
+  });
+}
+
+/* ---- loop vectors on the model ---- */
+// Pure geometry of the loop in axis coordinates: each row's arrow starts at its From face and runs
+// dir × nominal (so its length is the nominal, to scale). A row with no faces continues tip to tail.
+function loopSegments(P){
+  const faces = stackFaces(P), fb = id => faces.find(f => f.id === id);
+  let cursor = (fb(P.gap && P.gap.faceFrom) || {pos:0}).pos;
+  const rows = P.dims.chain.map((c, i) => { const s = c.dir === '-' ? -1 : 1, ff = fb(c.faceFrom), ft = fb(c.faceTo);
+    const start = ff ? ff.pos : cursor, end = start + s*(+c.nom || 0); cursor = end; return {i, start, end, ff, ft, s}; });
+  const a = fb(P.gap && P.gap.faceFrom), b = fb(P.gap && P.gap.faceTo);
+  return {rows, gap: a && b ? {a, b} : null, end: cursor};
+}
+function axisFrame(P, box){
+  const ax = (P.model && P.model.axis) || 'x', c = box.getCenter(new THREE.Vector3());
+  if (P.shape === 'prism' && ax === 'y') return {dir:new THREE.Vector3(0,0,-1), lane:new THREE.Vector3(0,1,0), base:new THREE.Vector3(c.x,0,0), top: box.max.y};
+  if (P.shape === 'prism' && ax === 'z') return {dir:new THREE.Vector3(0,1,0), lane:new THREE.Vector3(1,0,0), base:new THREE.Vector3(0,0,c.z), top: box.max.x};
+  return {dir:new THREE.Vector3(1,0,0), lane:new THREE.Vector3(0,1,0), base:new THREE.Vector3(0,0,c.z), top: box.max.y};
+}
+function addLoop(P, g, t, loop){
+  const chain = P.dims.chain, faces = stackFaces(P), fb = id => faces.find(f => f.id === id);
+  const box = new THREE.Box3().setFromObject(g), span = box.getSize(new THREE.Vector3()).length() || 1, fr = axisFrame(P, box);
+  const step = span * .055, margin = span * .07, shaftR = span * .0035;
+  const pt = (pos, h) => fr.base.clone().addScaledVector(fr.dir, pos).addScaledVector(fr.lane, h);
+  const L = {rows: [], gap: null, faces: []};
+  const rowsShown = Math.min(chain.length, loop.upTo == null ? chain.length : loop.upTo);
+  const csz = box.getSize(new THREE.Vector3()), cc = box.getCenter(new THREE.Vector3());
+  const tintPlane = (face, col) => {   // translucent face tint, perpendicular to the axis
+    let a, b; if (face.sec){ a = face.sec[0]; b = face.sec[1]; } else { const s = [csz.x, csz.y, csz.z]; const k = Math.abs(fr.dir.x) > .5 ? 0 : Math.abs(fr.dir.y) > .5 ? 1 : 2; const o = s.filter((v,j) => j !== k); a = o[0]; b = o[1]; }
+    const m = new THREE.MeshBasicMaterial({color: col, transparent:true, opacity:.32, side:THREE.DoubleSide, depthWrite:false});
+    const pl = new THREE.Mesh(new THREE.PlaneGeometry(Math.max(.02, b*1.02), Math.max(.02, a*1.02)), m);
+    pl.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1), fr.dir);
+    const p = fr.base.clone().addScaledVector(fr.dir, face.pos);
+    if (face.sec) { /* assembly bodies sit on the axis */ } else { const off = cc.clone().sub(fr.base); off.addScaledVector(fr.dir, -off.dot(fr.dir)); p.add(off); }
+    pl.position.copy(p); pl.renderOrder = 5; pl.visible = false; g.add(pl); return pl;
+  };
+  const arrow = (p0, p1, col, dashed) => {
+    const objs = [], v = p1.clone().sub(p0), len = v.length(), u = len > 1e-9 ? v.clone().normalize() : fr.dir.clone();
+    let mat;
+    if (dashed){ mat = new THREE.LineDashedMaterial({color: col, dashSize: span*.018, gapSize: span*.012, transparent:true});
+      const ln = new THREE.Line(new THREE.BufferGeometry().setFromPoints([p0, p1]), mat); ln.computeLineDistances(); ln.renderOrder = 10; g.add(ln); objs.push(ln); }
+    else { mat = new THREE.MeshBasicMaterial({color: col, transparent:true});
+      const sh = new THREE.Mesh(new THREE.CylinderGeometry(shaftR, shaftR, Math.max(1e-4, len), 10), mat);
+      sh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), u); sh.position.copy(p0.clone().add(p1).multiplyScalar(.5)); sh.renderOrder = 10; g.add(sh); objs.push(sh); }
+    const hm = new THREE.MeshBasicMaterial({color: col, transparent:true});
+    const head = new THREE.Mesh(new THREE.ConeGeometry(.5, 1, 14), hm); head.geometry.translate(0, -.5, 0);   // tip at the origin
+    head.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), u); head.position.copy(p1); head.userData.fixedPx = 13; head.renderOrder = 11; g.add(head); objs.push(head);
+    const pick = new THREE.Mesh(new THREE.CylinderGeometry(span*.02, span*.02, Math.max(1e-4, len), 6), new THREE.MeshBasicMaterial({visible:false}));
+    pick.quaternion.copy(objs[0].quaternion || new THREE.Quaternion()); if (dashed) pick.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), u);
+    pick.position.copy(p0.clone().add(p1).multiplyScalar(.5)); g.add(pick);
+    return {objs, mats: [mat, hm], pick};
+  };
+  const extLine = (pos, h, face, col) => { const fh = face && face.top != null ? face.top : fr.top;
+    const m = new THREE.LineBasicMaterial({color: col, transparent:true, opacity:.55});
+    const ln = new THREE.Line(new THREE.BufferGeometry().setFromPoints([pt(pos, h), pt(pos, fh)]), m); ln.renderOrder = 9; g.add(ln); return {ln, m}; };
+  const SEG = loopSegments(P);
+  SEG.rows.forEach(({i, start, end, ff, ft, s}) => {
+    if (i >= rowsShown) return;
+    const col = rowColor(i);
+    const h = fr.top + margin + (i+1)*step;
+    const ar = arrow(pt(start, h), pt(end, h), col, false); ar.pick.userData.lrow = i;
+    const e1 = extLine(start, h, ff, col), e2 = extLine(end, h, ft, col);
+    const tints = [ff, ft].filter(Boolean).map(f => tintPlane(f, col));
+    const lbl = {html: `<span class="sw" style="background:${col}"></span>${i+1} ${s < 0 ? '−' : '+'}`, pos: pt((start+end)/2, h + step*.45), color: col, row: i};
+    const mats = ar.mats.concat([e1.m, e2.m]); mats.forEach(m => m.userData.base = m.opacity);
+    L.rows.push({mats, tints, lbl, pick: ar.pick});
+  });
+  if (loop.gap){
+    const a = SEG.gap && SEG.gap.a, b = SEG.gap && SEG.gap.b;
+    if (a && b){
+      const h = fr.top + margin + (chain.length + 1)*step;
+      const ar = arrow(pt(a.pos, h), pt(b.pos, h), GAP_COLOR, true); ar.pick.userData.lrow = -1;
+      const e1 = extLine(a.pos, h, a, GAP_COLOR), e2 = extLine(b.pos, h, b, GAP_COLOR);
+      const mats = ar.mats.concat([e1.m, e2.m]);
+      const rq = P.req || {}, lo = parseFloat(rq.min), hi = parseFloat(rq.max);
+      if (isFinite(lo) && isFinite(hi) && hi > lo){   // requirement band: light translucent slab on the gap
+        const sgnG = b.pos >= a.pos ? 1 : -1, p0 = a.pos + sgnG*lo, p1 = a.pos + sgnG*hi;
+        const bm = new THREE.MeshBasicMaterial({color: '#7cb294', transparent:true, opacity:.22, depthWrite:false, side:THREE.DoubleSide});
+        const slab = new THREE.Mesh(new THREE.BoxGeometry(1,1,1), bm), lenB = Math.abs(p1 - p0);
+        slab.quaternion.setFromUnitVectors(new THREE.Vector3(1,0,0), fr.dir); slab.scale.set(Math.max(1e-4, lenB), step*.7, step*.7);
+        slab.position.copy(pt((p0+p1)/2, h)); slab.renderOrder = 8; g.add(slab); mats.push(bm);
+      }
+      mats.forEach(m => m.userData.base = m.opacity);
+      L.gap = {mats, lbl: {html: 'Gap', pos: pt((a.pos+b.pos)/2, h + step*.45), color: GAP_COLOR, row: -1}, pick: ar.pick};
+    }
+  }
+  return L;
+}
+// Highlight one row (or the gap = -1); everything else dims to about 30%. null clears.
+function setLoopHL(i){
+  const L = VIEW.loop; if (!L) return; VIEW.hl = i;
+  const all = L.rows.map((r,k) => [r,k]).concat(L.gap ? [[L.gap, -1]] : []);
+  all.forEach(([r,k]) => { const on = i == null || i === k;
+    r.mats.forEach(m => { const b = m.userData.base == null ? 1 : m.userData.base; m.opacity = on ? b : b * .3; });
+    (r.tints || []).forEach(p => p.visible = i != null && i === k);
+    if (r.lblEl) r.lblEl.classList.toggle('dim', !on); });
+  document.querySelectorAll('[data-lrow]').forEach(tr => tr.classList.toggle('hl', i != null && +tr.dataset.lrow === i));
+  if (VIEW.draw) VIEW.draw();
+}
+// HTML labels over the canvas, so they stay readable at any zoom.
+function placeLabels(){
+  const L = VIEW.loop; if (!L || !VIEW.ov) return; const cam = VIEW.mode === '2d' ? VIEW.ortho : VIEW.persp;
+  const w = VIEW.el.clientWidth, h = VIEW.el.clientHeight, v = new THREE.Vector3();
+  L.rows.concat(L.gap ? [L.gap] : []).forEach(r => { if (!r.lblEl) return; v.copy(r.lbl.pos); VIEW.group.localToWorld(v); v.project(cam);
+    r.lblEl.style.transform = `translate(${((v.x + 1)/2*w).toFixed(1)}px, ${((1 - v.y)/2*h).toFixed(1)}px) translate(-50%, -50%)`;
+    r.lblEl.style.display = v.z > 1 ? 'none' : ''; });
+}
+// Arrowheads keep a fixed size on screen.
+function scaleFixed(){
+  if (!VIEW.group) return; const cam = VIEW.mode === '2d' ? VIEW.ortho : VIEW.persp, h = VIEW.el.clientHeight || 300, wp = new THREE.Vector3();
+  VIEW.group.traverse(o => { if (!o.userData.fixedPx) return; let unitsPerPx;
+    if (VIEW.mode === '2d') unitsPerPx = (VIEW.ortho.top - VIEW.ortho.bottom) / VIEW.ortho.zoom / h;
+    else { o.getWorldPosition(wp); unitsPerPx = 2 * wp.distanceTo(VIEW.persp.position) * Math.tan(VIEW.persp.fov * Math.PI/360) / h; }
+    const s = o.userData.fixedPx * unitsPerPx; o.scale.set(s*.55, s, s*.55); });
+}
+function mountLoopUI(L){
+  VIEW.loop = L; VIEW.hl = null; if (!VIEW.ov) return; VIEW.ov.innerHTML = '';
+  if (!L) return;
+  L.rows.concat(L.gap ? [L.gap] : []).forEach(r => { const el = document.createElement('div'); el.className = 'vlbl'; el.style.borderColor = r.lbl.color; el.innerHTML = r.lbl.html; el.dataset.lrow = r.lbl.row; VIEW.ov.appendChild(el); r.lblEl = el; });
+  setLoopHL(null);
+}
+function pickAt(ev, list){
+  const rect = VIEW.r.domElement.getBoundingClientRect(), cam = VIEW.mode === '2d' ? VIEW.ortho : VIEW.persp;
+  const m = new THREE.Vector2(((ev.clientX - rect.left)/rect.width)*2 - 1, -((ev.clientY - rect.top)/rect.height)*2 + 1);
+  const rc = new THREE.Raycaster(); rc.setFromCamera(m, cam); return rc.intersectObjects(list, false)[0] || null;
+}
+function onViewerMove(ev){
+  if (!VIEW.loop || UI.pick) return;
+  const picks = VIEW.loop.rows.map(r => r.pick).concat(VIEW.loop.gap ? [VIEW.loop.gap.pick] : []);
+  const hit = pickAt(ev, picks), i = hit ? hit.object.userData.lrow : null;
+  if (i !== VIEW.hl) setLoopHL(i);
+}
+// Face picking: click a face on the model to fill the From / To you chose.
+function onViewerClick(ev){
+  const pk = UI.pick; if (!pk || !UI.pc.draft) return; const P = UI.pc.draft.problem;
+  const meshes = []; VIEW.group.traverse(o => { if (o.isMesh && o.userData.model) meshes.push(o); });
+  const hit = pickAt(ev, meshes); if (!hit) return toast('Click on the part itself.');
+  const box = new THREE.Box3().setFromObject(VIEW.group), fr = axisFrame(P, box);
+  const lp = VIEW.group.worldToLocal(hit.point.clone()), pos = lp.sub(fr.base).dot(fr.dir);
+  const faces = stackFaces(P); if (!faces.length) return;
+  const best = faces.reduce((a,f) => Math.abs(f.pos - pos) < Math.abs(a.pos - pos) ? f : a, faces[0]);
+  if (pk.i < 0) P.gap[pk.end] = best.id; else { P.dims.chain[pk.i][pk.end] = best.id; autoFromFaces(P, pk.i); }
+  UI.pick = null; toast(`Picked: ${best.name}`); render();
+}
+
+/* ---- editor panel for a stack on part ---- */
+function chainEditor(P){
+  const faces = stackFaces(P), fo = [['','Pick a face…']].concat(faces.map(f => [f.id, `${f.name} (${fmt(f.pos)})`]));
+  const pk = UI.pick, pbtn = (i, end) => `<button class="btn sm${pk && pk.i === i && pk.end === end ? ' primary' : ''}" type="button" data-act="pcPickFace" data-i="${i}" data-end="${end}" title="Click a face on the 3D model" aria-label="Pick ${end === 'faceFrom' ? 'From' : 'To'} face on the model">◎</button>`;
+  const cl = loopClosure(P);
+  let h = `<div class="row">${inSel('problem.model.axis', P.model.axis, axisOpts(P), 'Stack axis')}<span class="small muted">1D: every vector runs parallel to this axis.</span></div>`;
+  if (!faces.length) h += `<div class="msg info">${P.shape === 'assembly' ? 'Add bodies in step 2 first. Each body gives a left and a right face.' : 'This model has no faces along that axis yet.'}</div>`;
+  if (pk) h += `<div class="msg info">Click a face on the 3D model for <b>${pk.i < 0 ? 'the gap' : 'row ' + (pk.i + 1)}</b>, ${pk.end === 'faceFrom' ? 'From' : 'To'}. <button class="link" type="button" data-act="pcPickCancel">Cancel</button></div>`;
+  h += `<div class="tblwrap"><table class="tbl chainx"><thead><tr><th>#</th><th>Description</th><th>From face</th><th>To face</th><th>Dir</th><th>Nominal</th><th>Upper</th><th>Lower</th><th></th></tr></thead><tbody>${
+    P.dims.chain.map((c,i) => { const b = 'problem.dims.chain.' + i, w = rowWarnings(P, c);
+      return `<tr data-lrow="${i}"><td class="mono small"><span class="sw" style="background:${rowColor(i)}"></span>${i+1}</td>
+        <td><input type="text" id="${bid(b+'.name')}" data-bind="${b}.name" value="${esc(c.name)}" style="width:140px"></td>
+        <td><div class="row nowrap"><select id="${bid(b+'.faceFrom')}" data-bind="${b}.faceFrom" style="max-width:190px">${fo.map(([v,t]) => `<option value="${esc(v)}" ${v === (c.faceFrom||'') ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>${pbtn(i,'faceFrom')}</div></td>
+        <td><div class="row nowrap"><select id="${bid(b+'.faceTo')}" data-bind="${b}.faceTo" style="max-width:190px">${fo.map(([v,t]) => `<option value="${esc(v)}" ${v === (c.faceTo||'') ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>${pbtn(i,'faceTo')}</div></td>
+        <td><select id="${bid(b+'.dir')}" data-bind="${b}.dir"><option value="+" ${c.dir !== '-' ? 'selected' : ''}>+</option><option value="-" ${c.dir === '-' ? 'selected' : ''}>−</option></select></td>
+        <td><input type="text" inputmode="decimal" id="${bid(b+'.nom')}" data-bind="${b}.nom" data-kind="num" value="${+c.nom}" style="width:76px"></td>
+        <td><input type="text" inputmode="decimal" id="${bid(b+'.up')}" data-bind="${b}.up" data-kind="num" value="${+c.up}" style="width:68px"></td>
+        <td><input type="text" inputmode="decimal" id="${bid(b+'.lo')}" data-bind="${b}.lo" data-kind="num" value="${+c.lo}" style="width:68px"></td>
+        <td class="r"><button class="btn sm danger" type="button" data-act="pcRowDel" data-i="${i}" aria-label="Remove row ${i+1}">×</button></td></tr>
+        ${w.length ? `<tr class="wrow"><td></td><td colspan="8"><ul class="warns">${w.map(x => `<li>${esc(x)}</li>`).join('')}</ul></td></tr>` : ''}`; }).join('')}
+      <tr data-lrow="-1"><td class="mono small"><span class="sw gap"></span>Gap</td><td class="small muted">Closes the loop</td>
+        <td><div class="row nowrap"><select id="${bid('problem.gap.faceFrom')}" data-bind="problem.gap.faceFrom" style="max-width:190px">${fo.map(([v,t]) => `<option value="${esc(v)}" ${v === (P.gap.faceFrom||'') ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>${pbtn(-1,'faceFrom')}</div></td>
+        <td><div class="row nowrap"><select id="${bid('problem.gap.faceTo')}" data-bind="problem.gap.faceTo" style="max-width:190px">${fo.map(([v,t]) => `<option value="${esc(v)}" ${v === (P.gap.faceTo||'') ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>${pbtn(-1,'faceTo')}</div></td>
+        <td colspan="5" class="small muted">Gap = To − From along the axis</td></tr></tbody></table></div>
+    <div class="row"><button class="btn sm" type="button" data-act="pcRowAdd">Add row</button><span class="small muted">Picking faces fills the nominal from the model and suggests the direction. You can override both; the warnings tell you when they disagree with the model.</span></div>
+    <div class="math">Loop closure: Σ(signed nominals) = ${fmt(cl.sum)}${cl.ok == null ? ' · tag the gap faces to check it against the model' : ` · gap on the model = ${fmt(cl.gap)} · <b>${cl.ok ? 'closes ✓' : 'does NOT close ✗'}</b>`}</div>
+    <div class="row">${inNum('problem.req.min', P.req.min === '' ? null : P.req.min, 'Requirement: min gap', 90)}${inNum('problem.req.max', P.req.max === '' ? null : P.req.max, 'Requirement: max gap', 90)}${inNum('problem.mrssF', P.mrssF, 'MRSS factor f', 70)}
+      <label class="fld" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="${bid('problem.showLoopBeforeSubmit')}" data-bind="problem.showLoopBeforeSubmit" data-kind="bool" ${P.showLoopBeforeSubmit ? 'checked' : ''}> Show loop before submit</label></div>
+    <span class="small muted">Off by default: finding the loop is part of the exercise, so students see the vectors only after they submit.</span>`;
+  return h;
+}
+function bodiesEditor(P){
+  const bs = P.model.bodies || [];
+  return `<div class="tblwrap"><table class="tbl"><thead><tr><th>ID</th><th>Name</th><th>Kind</th><th>Start X</th><th>Length</th><th>Ø / width</th><th>Inner Ø / height</th><th></th></tr></thead><tbody>${
+    bs.map((b,i) => { const p = 'problem.model.bodies.' + i, num = (k, w) => `<input type="text" inputmode="decimal" id="${bid(p+'.'+k)}" data-bind="${p}.${k}" data-kind="num" value="${+b[k] || 0}" style="width:${w||70}px">`;
+      return `<tr><td class="mono small">${b.id}</td><td><input type="text" id="${bid(p+'.name')}" data-bind="${p}.name" value="${esc(b.name)}" style="width:130px"></td>
+        <td><select id="${bid(p+'.kind')}" data-bind="${p}.kind">${Object.entries(BODY_KINDS).map(([k,v]) => `<option value="${k}" ${b.kind===k?'selected':''}>${v}</option>`).join('')}</select></td>
+        <td>${num('x0')}</td><td>${num('len')}</td><td>${b.kind === 'block' ? num('w') : num('dia')}</td><td>${b.kind === 'block' ? num('h') : b.kind === 'tube' ? num('idia') : '<span class="small muted">—</span>'}</td>
+        <td class="r"><button class="btn sm danger" type="button" data-act="pcBodyDel" data-i="${i}" aria-label="Remove ${esc(b.name)}">×</button></td></tr>`; }).join('') || '<tr><td colspan="8" class="muted">No bodies yet.</td></tr>'}</tbody></table></div>
+    <div class="row"><button class="btn sm" type="button" data-act="pcBodyAdd" ${bs.length >= 6 ? 'disabled' : ''}>Add body</button><button class="btn sm" type="button" data-act="pcBodyEnd">Place end to end</button><span class="small muted">Up to 6 bodies along the X axis. Start X lets a body sit inside another (a spacer inside a housing). Bodies are drawn see-through.</span></div>`;
+}
+
+/* ---- Teach mode / Step through solution ---- */
+function convText(c){ const U = +c.up || 0, Lo = +c.lo || 0, nom = +c.nom || 0, m = nom + (U + Lo)/2, t = (U - Lo)/2;
+  const tol = Math.abs(U + Lo) < 1e-9 && U > 0 ? `±${fmt(U)}` : `${U < 0 ? '−' : '+'}${fmt(Math.abs(U))}/${Lo > 0 ? '+' : '−'}${fmt(Math.abs(Lo))}`;
+  return `${fmt(nom)} ${tol} → ${fmt(m)} ± ${fmt(t)}`; }
+function stackResults(P){
+  const f = +P.mrssF || 1.5, r = evalStack(P.dims.chain, f), rq = P.req || {}, lo = parseFloat(rq.min), hi = parseFloat(rq.max);
+  const row = (name, half) => { const mn = r.mean - half, mx = r.mean + half; const pass = (isFinite(lo) ? mn >= lo - 1e-9 : true) && (isFinite(hi) ? mx <= hi + 1e-9 : true);
+    return {name, half, mn, mx, pass, checked: isFinite(lo) || isFinite(hi)}; };
+  return {r, f, rows: [row('Worst case', r.wc), row('RSS', r.rss), row(`Modified RSS (f = ${f})`, r.mrss)], lo, hi};
+}
+function teachHTML(P){
+  const chain = P.dims.chain, n = chain.length, step = Math.max(0, Math.min(UI.teach.step, n + 1));
+  let mean = 0, wc = 0, ss = 0;
+  const lines = chain.map((c,i) => { const U = +c.up || 0, Lo = +c.lo || 0, m = (+c.nom || 0) + (U+Lo)/2, t = (U-Lo)/2, s = c.dir === '-' ? -1 : 1;
+    mean += s*m; wc += Math.abs(t); ss += t*t; const on = i < step;
+    return `<tr data-lrow="${i}" class="${on ? '' : 'hidden-step'}"><td class="mono small"><span class="sw" style="background:${rowColor(i)}"></span>${i+1}</td><td>${on ? esc(c.name) : '<span class="muted">·</span>'}</td><td class="mono">${on ? (s < 0 ? '−' : '+') : ''}</td>
+      <td class="mono small">${on ? convText(c) : ''}</td><td class="r mono small">${on ? fmt(mean) : ''}</td><td class="r mono small">${on ? '±' + f5(wc) : ''}</td><td class="r mono small">${on ? '±' + f5(Math.sqrt(ss)) : ''}</td></tr>`; }).join('');
+  let h = `<div class="panel pad stack teach" id="teachPanel"><div class="row" style="justify-content:space-between"><h3>${ROLES[me().role].staff ? 'Teach' : 'Step through solution'}</h3><span class="small muted">Step ${step} of ${n + 1}</span></div>
+    <div class="tblwrap"><table class="tbl"><thead><tr><th>#</th><th>Description</th><th>Dir</th><th>Nominal → mean ± equal</th><th class="r">Running mean Σ</th><th class="r">Running WC Σ|t|</th><th class="r">Running RSS √Σt²</th></tr></thead><tbody>${lines}</tbody></table></div>`;
+  if (step === 0) h += `<p class="small muted" style="margin:0">Each Next reveals one row: its vector on the model, its face tint and its line here. Unequal tolerances are converted to mean nominal ± equal first.</p>`;
+  if (step > n){
+    const R = stackResults(P);
+    h += `<div class="math">Mean gap = Σ(± means) = <b>${fmt(R.r.mean)}</b>${isFinite(R.lo) || isFinite(R.hi) ? ` · Requirement ${isFinite(R.lo) ? fmt(R.lo) : '—'} to ${isFinite(R.hi) ? fmt(R.hi) : '—'}` : ''}<br>${
+      R.rows.map(x => `${x.name}: ±${f5(x.half)} → ${fmt(x.mn)} to ${fmt(x.mx)}${x.checked ? ` · <b class="${x.pass ? 'okc' : 'failc'}">${x.pass ? 'PASS' : 'FAIL'}</b>` : ''}`).join('<br>')}<br><span class="small">WC = Σ|t| · RSS = √Σt² · MRSS = min(f·RSS, WC)</span></div>`;
+  }
+  h += `<div class="teachbar row"><button class="btn sm" type="button" data-act="tBack" ${step === 0 ? 'disabled' : ''}>← Back</button><button class="btn sm primary" type="button" data-act="tNext" ${step > n ? 'disabled' : ''}>Next →</button><button class="btn sm" type="button" data-act="tAll">Show all</button><button class="btn sm" type="button" data-act="tReset">Reset</button><span style="flex:1"></span><button class="btn sm" type="button" data-act="tClose">Close</button></div>
+    <p class="small muted" style="margin:0">Keyboard: ← / →. Read-only: stepping through doesn't change any score.</p></div>`;
+  return h;
+}
+function canTeach(u, it){
+  if (!isModelStack(it.problem)) return false;
+  if (ROLES[u.role].staff) return true;
+  return UI.play.result != null || (progressFor(u.email)[it.id] || {}).score != null;
+}
+// Which vectors the 3D view shows right now.
+function loopOptsFor(u){
+  if (UI.tab === 'creator') return {upTo: null, gap: true};
+  const it = UI.play.preview ? UI.pc.draft : item(UI.play.id); if (!it || !isModelStack(it.problem)) return null;
+  const n = playP(it).dims.chain.length;
+  if (UI.teach.on && canTeach(u, it)) return {upTo: Math.min(UI.teach.step, n), gap: UI.teach.step > n};
+  if (it.problem.showLoopBeforeSubmit || canTeach(u, it)) return {upTo: null, gap: true};
+  return null;
+}
+
+
+/* ---- A3: "why" explanations shown after answering · A4: randomized values ---- */
+const taBind = (path, val, label) => `<label class="fld">${label}<textarea id="${bid(path)}" data-bind="${path}" rows="2">${esc(val || '')}</textarea></label>`;
+function whyFor(P){ P.why = Object.assign({general:'', accept:'', reject:''}, P.why || {}); return P.why; }
+function whyEditor(P){
+  const w = whyFor(P);
+  let h = `<h3 style="margin-top:6px">Explanations <span class="small muted" style="font-weight:400">shown after the student answers</span></h3>`;
+  if (P.ptype === 'accept') h += `<div class="two">${taBind('problem.why.accept', w.accept, 'Why ACCEPT is right or wrong here')}${taBind('problem.why.reject', w.reject, 'Why REJECT is right or wrong here')}</div>`;
+  if (P.ptype === 'errors') h += `<span class="small muted">Each frame has its own "Why" box in step 5. It's shown for that frame whether the student got it right or wrong.</span>`;
+  return h + taBind('problem.why.general', w.general, 'General explanation (shown with every answer)');
+}
+function whyAfter(P, a){
+  const w = P.why || {}, out = [];
+  if (P.ptype === 'accept' && a.verdict){ const r = evalAccept(P), right = r && r.pass ? 'accept' : 'reject';
+    if (w[a.verdict]) out.push(`<b>You chose ${a.verdict.toUpperCase()} ${a.verdict === right ? '✓' : '✗'}</b> ${esc(w[a.verdict])}`);
+    if (a.verdict !== right && w[right]) out.push(`<b>${right.toUpperCase()} is correct.</b> ${esc(w[right])}`); }
+  if (w.general) out.push(esc(w.general));
+  return out.length ? `<div class="why">${out.join('<br>')}</div>` : '';
+}
+// Randomized values: the author gives each chosen value a min, max and step. Every attempt draws new
+// values into a copy of the problem; the answer key is recomputed from that copy, so it always matches.
+function randFields(P){
+  const F = [];
+  if (P.ptype === 'stack' && P.dims && Array.isArray(P.dims.chain)) P.dims.chain.forEach((c, i) => { const nm = `Row ${i+1}${c.name ? ' (' + c.name + ')' : ''}`;
+    if (!isModelStack(P)) F.push([`dims.chain.${i}.nom`, nm + ' nominal']);   // on a model the nominal is tied to the faces
+    F.push([`dims.chain.${i}.up`, nm + ' upper dev'], [`dims.chain.${i}.lo`, nm + ' lower dev']); });
+  if (P.ptype === 'accept' && P.ans && P.ans.meas) F.push(['ans.meas.size', 'Measured size'], ['ans.meas.dx', 'X offset'], ['ans.meas.dy', 'Y offset'], ['ans.meas.dev', 'Measured deviation']);
+  return F;
+}
+function randValue(r, rnd){
+  const lo = +r.min, hi = +r.max, st = +r.step > 0 ? +r.step : .0001;
+  if (!(hi >= lo)) return lo;
+  const n = Math.floor((hi - lo)/st + 1e-9);
+  return +(lo + st * Math.floor((rnd ? rnd() : Math.random()) * (n + 1))).toFixed(6);
+}
+function activeRand(P){ const ok = new Set(randFields(P).map(([p]) => p)); return (P.rand || []).filter(r => r.path && ok.has(r.path)); }
+function makeInstance(P, rnd){
+  const rs = activeRand(P); if (!rs.length) return null;
+  const Q = JSON.parse(JSON.stringify(P)); rs.forEach(r => setPath(Q, r.path, randValue(r, rnd))); return Q;
+}
+function keyText(P){
+  if (P.ptype === 'stack') return fmt(ASK[P.ans.ask][1](evalStack(P.dims.chain, P.mrssF)));
+  if (P.ptype === 'accept'){ const r = evalAccept(P); return r ? `${r.pass ? 'ACCEPT' : 'REJECT'}, measured ${fmt(r.measured)}` : '—'; }
+  return '—';
+}
+function randEditor(P){
+  const F = randFields(P); if (!F.length) return '';
+  P.rand = P.rand || [];
+  const rows = P.rand.map((r, i) => { const b = 'problem.rand.' + i, cur = r.path ? getPath(P, r.path) : null;
+    return `<tr><td>${inSel(b + '.path', r.path || '', [['', 'Pick a value…']].concat(F), '')}</td><td>${inNum(b + '.min', r.min, '', 76)}</td><td>${inNum(b + '.max', r.max, '', 76)}</td><td>${inNum(b + '.step', r.step, '', 70)}</td>
+      <td class="mono small">${cur == null ? '—' : fmt(+cur)}</td><td class="r"><button class="btn sm danger" type="button" data-act="pcRandDel" data-i="${i}" aria-label="Remove range ${i+1}">×</button></td></tr>`; }).join('');
+  let h = `<h3 style="margin-top:6px">Randomized values <span class="small muted" style="font-weight:400">optional · new numbers on every attempt</span></h3>
+    <div class="tblwrap"><table class="tbl"><thead><tr><th>Value</th><th>Min</th><th>Max</th><th>Step</th><th>As authored</th><th></th></tr></thead><tbody>${rows || '<tr><td colspan="6" class="muted">None. Every attempt uses the values above.</td></tr>'}</tbody></table></div>
+    <div class="row"><button class="btn sm" type="button" data-act="pcRandAdd">Add range</button><span class="small muted">Lower deviations are negative, e.g. min −.004, max −.001. ${isModelStack(P) ? 'Nominals stay tied to the model faces, so only tolerances can vary here.' : ''} If your prompt quotes a number that varies, reword it to point at the data table.</span></div>`;
+  if (activeRand(P).length){
+    const draws = [0, 1, 2].map(() => makeInstance(P));
+    h += `<div class="math">Sample draws (the key is recomputed each time):<br>${draws.map((Q, k) => `Draw ${k+1}: ${activeRand(P).map(r => `${(F.find(([p]) => p === r.path) || [, r.path])[1]} = ${fmt(+getPath(Q, r.path))}`).join(' · ')} → key ${keyText(Q)}`).join('<br>')}</div>`;
+  }
+  return h;
+}
+const playBase = it => it && it.problem;
+const playP = it => UI.play.inst || playBase(it);
 
 /* ---- Problem creator (Owner, Admin, Creator-Instructor) ---- */
 function getPath(o, path){ return path.split('.').reduce((a,k) => a == null ? a : a[k], o); }
@@ -712,6 +1159,7 @@ function viewCreator(u){
       </div>`;
   }
   const it = pc.draft, P = it.problem, sh = P.shape;
+  ensureStackModel(P);
   let h = `<div class="pagehead"><div><h2>${pc.isNew ? 'New problem' : 'Edit ' + it.id.toUpperCase()}</h2><p>${SHAPES[sh].label}. Changes apply when you save.</p></div>
     <div class="row"><button class="btn" type="button" data-act="pcBack">Back to list</button><button class="btn" type="button" data-act="pcPreview">Preview as student</button><button class="btn primary" type="button" data-act="pcSave">Save</button></div></div>`;
   h += `<div class="creator"><div class="stack">`;
@@ -735,11 +1183,13 @@ function viewCreator(u){
         <td><input type="text" inputmode="decimal" id="${bid('problem.dims.chain.'+i+'.lo')}" data-bind="problem.dims.chain.${i}.lo" data-kind="num" value="${+c.lo}" style="width:72px"></td>
         <td class="r"><button class="btn sm danger" type="button" data-act="pcRowDel" data-i="${i}" aria-label="Remove row ${i+1}">×</button></td></tr>`).join('')}</tbody></table></div>
       <div class="row"><button class="btn sm" type="button" data-act="pcRowAdd">Add item</button><span class="small muted">Deviations are signed: +.005 / −.003. Unilateral is fine (e.g. +.000 / −.003).</span></div>`;
+  } else if (sh === 'assembly'){
+    h += bodiesEditor(P);
   } else if (SHAPES[sh].dims.length){
     h += `<div class="row">${SHAPES[sh].dims.map(([k,l]) => inNum('problem.dims.'+k, P.dims[k], l)).join('')}</div>`;
   } else h += `<p class="small muted" style="margin:0">The shaft is built from its turned diameters, in order from the left end. Add or edit them under Features.</p>`;
   h += `</div>`;
-  if (sh !== 'stack'){
+  if (sh !== 'stack' && sh !== 'assembly'){
     // 3 features
     const kinds = Object.entries(FEAT).filter(([k,d]) => d.shapes.includes(sh));
     const procs = [...new Set(kinds.map(([k,d]) => d.proc))];
@@ -765,26 +1215,29 @@ function viewCreator(u){
         ${c.char ? `<label class="fld">Ø<input type="checkbox" id="${bid(base+'.dia')}" data-bind="${base}.dia" data-kind="bool" ${c.dia?'checked':''}></label>
         ${inNum(base+'.tol', c.tol, 'Tolerance', 72)}${inSel(base+'.mod', c.mod, [['RFS','RFS'],['MMC','Ⓜ MMC'],['LMC','Ⓛ LMC']], 'Modifier')}
         ${[0,1,2].map(j => inSel(base+'.datums.'+j, c.datums[j] || '', [['','—']].concat(letters.map(L => [L,L])), ['Primary','Secondary','Tertiary'][j])).join('')}` : ''}</div>
-        ${c.char && P.ptype === 'errors' ? `<div class="row"><label class="fld" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="${bid(base+'.planted')}" data-bind="${base}.planted" data-kind="bool" ${c.planted?'checked':''}> Also count as an error (functional mistake the checker can't see)</label>${c.planted ? `<input type="text" id="${bid(base+'.note')}" data-bind="${base}.note" value="${esc(c.note)}" placeholder="Why it's wrong (shown after submit)" style="flex:1;min-width:200px">` : ''}</div>` : ''}
+        ${c.char && P.ptype === 'errors' ? `<div class="row"><label class="fld" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="${bid(base+'.planted')}" data-bind="${base}.planted" data-kind="bool" ${c.planted?'checked':''}> Also count as an error (functional mistake the checker can't see)</label>${c.planted ? `<input type="text" id="${bid(base+'.note')}" data-bind="${base}.note" value="${esc(c.note)}" placeholder="Why it's wrong (shown after submit)" style="flex:1;min-width:200px">` : ''}</div>
+        <div class="row"><input type="text" id="${bid(base+'.why')}" data-bind="${base}.why" value="${esc(c.why || '')}" placeholder="Why (optional, shown for this frame after answering, right or wrong)" style="flex:1;min-width:240px"></div>` : ''}
         ${errs.length ? `<ul class="warns">${errs.map(e => `<li>${esc(e)}</li>`).join('')}</ul>` : (c.char ? '<div class="small ok">Passes the rule checks.</div>' : '')}</div>`; }).join('') || '<div class="empty">Add features first.</div>';
     h += `<span class="small muted">Rule checks come from the project's verified reference (control table, §2). They catch rule breaks, not design intent.</span></div>`;
   }
   // 6 problem
-  const types = sh === 'stack' ? ['stack'] : ['accept','errors','fcf'];
+  const types = (sh === 'stack' || sh === 'assembly') ? ['stack'] : ['accept','errors','fcf','stack'];
   if (!types.includes(P.ptype)) P.ptype = types[0];
-  h += `<div class="panel pad stack"><h3>${sh === 'stack' ? '3' : '6'} · Problem</h3><div class="row">${inSel('problem.ptype', P.ptype, types.map(t => [t, PTYPES[t]]), 'Students will')}</div>
+  ensureStackModel(P);
+  h += `<div class="panel pad stack"><h3>${sh === 'stack' || sh === 'assembly' ? '3' : '6'} · Problem</h3><div class="row">${inSel('problem.ptype', P.ptype, types.map(t => [t, PTYPES[t]]), 'Students will')}</div>
     <label class="fld">What students read<textarea id="${bid('problem.prompt')}" data-bind="problem.prompt">${esc(P.prompt)}</textarea></label>`;
-  h += answerSetup(P) + `</div>`;
+  if (isModelStack(P)) h += `<h3 style="margin-top:6px">Stack on the part</h3>` + chainEditor(P);
+  h += answerSetup(P) + randEditor(P) + whyEditor(P) + `</div>`;
   h += `<div class="row">${pc.isNew ? '' : `<button class="btn danger" type="button" data-act="pcDelete">${UI.confirm === 'pdel' ? 'Click again to delete this problem' : 'Delete problem'}</button>`}<span style="flex:1"></span><button class="btn" type="button" data-act="pcPreview">Preview as student</button><button class="btn primary" type="button" data-act="pcSave">Save</button></div>`;
-  h += `</div><div class="cside"><div class="panel"><div id="viewerSlot" class="vslot"></div><div class="vbar"><span class="small muted">${sh === 'stack' ? 'Items laid end to end from the start line, on the side you chose. Numbers match the table.' : sh === 'prism' && P.view === '2d' ? '2D top view · drag to pan' : 'Drag to rotate · scroll to zoom'}</span><button class="btn sm" type="button" data-act="viewReset">Reset view</button></div></div></div></div>`;
+  h += `</div><div class="cside"><div class="panel"><div id="viewerSlot" class="vslot"></div><div class="vbar"><span class="small muted">${sh === 'stack' ? 'Items laid end to end from the start line, on the side you chose. Numbers match the table.' : isModelStack(P) ? 'Loop vectors above the part, one color per row. Hover a row or a vector to highlight it.' : sh === 'prism' && P.view === '2d' ? '2D top view · drag to pan' : 'Drag to rotate · scroll to zoom'}</span><button class="btn sm" type="button" data-act="viewReset">Reset view</button></div></div></div></div>`;
   return h;
 }
 function answerSetup(P){
   if (P.ptype === 'stack'){
     P.ans = P.ans || {}; if (!P.ans.ask) P.ans.ask = 'wcMin'; if (P.ans.tol == null) P.ans.tol = .0005;
-    const r = evalStack(P.dims.chain), key = ASK[P.ans.ask][1](r);
+    const r = evalStack(P.dims.chain, P.mrssF), key = ASK[P.ans.ask][1](r);
     return `<div class="row">${inSel('problem.ans.ask', P.ans.ask, Object.entries(ASK).map(([k,v]) => [k, v[0]]), 'Ask for')}${inNum('problem.ans.tol', P.ans.tol, 'Grade within ±', 80)}</div>
-      <div class="math">Mean gap = Σ(± mean dims) = ${fmt(r.mean)}<br>WC = Σ|t| = ±${fmt(r.wc)} · RSS = √Σt² = ±${fmt(r.rss)} · MRSS = min(1.5·RSS, WC) = ±${fmt(r.mrss)}<br><b>Answer key: ${ASK[P.ans.ask][0]} = ${fmt(key)}</b></div>`;
+      <div class="math">Mean gap = Σ(± mean dims) = ${fmt(r.mean)}<br>WC = Σ|t| = ±${fmt(r.wc)} · RSS = √Σt² = ±${fmt(r.rss)} · MRSS = min(${+P.mrssF || 1.5}·RSS, WC) = ±${fmt(r.mrss)}<br><b>Answer key: ${ASK[P.ans.ask][0]} = ${fmt(key)}</b></div>`;
   }
   if (P.ptype === 'accept'){
     P.ans = P.ans || {}; P.ans.meas = P.ans.meas || {size:0, dx:0, dy:0, dev:0};
@@ -822,12 +1275,12 @@ function answerSetup(P){
 function viewPlay(u){
   const pl = UI.play, it = pl.preview ? UI.pc.draft : item(pl.id);
   if (!it) { UI.tab = 'problems'; return viewItems(u, 'problem'); }
-  const P = it.problem, best = (progressFor(u.email)[it.id] || {}).score;
+  const P = playP(it), best = (progressFor(u.email)[it.id] || {}).score, randOn = activeRand(playBase(it)).length > 0;
   let h = `<div class="pagehead"><div><span class="small muted mono">${pl.preview ? 'PREVIEW · ' : ''}${it.id.toUpperCase()} · ${PTYPES[P.ptype]}</span><h2>${esc(it.title)}</h2>${!pl.preview && best != null ? `<p>Best score so far: ${best}%</p>` : ''}</div>
-    <button class="btn" type="button" data-act="playBack">${pl.preview ? 'Back to editor' : 'Back to problems'}</button></div>`;
-  h += `<div class="creator"><div class="stack"><div class="panel pad stack"><h3>Problem</h3><p style="margin:0">${esc(P.prompt)}</p>${playForm(P)}</div>
-    <div class="panel pad stack"><h3>${P.shape === 'stack' ? 'Stack data' : 'Drawing data'}</h3>${drawingTable(P, P.ptype === 'fcf' ? P.ans.feat : null)}</div></div>
-    <div class="cside"><div class="panel"><div id="viewerSlot" class="vslot"></div><div class="vbar"><span class="small muted">${P.shape === 'stack' ? 'Items laid end to end from the start line, on the side you chose. Numbers match the table.' : 'Drag to rotate · scroll to zoom'}</span><button class="btn sm" type="button" data-act="viewReset">Reset view</button></div></div></div></div>`;
+    <div class="row">${canTeach(u, it) && !UI.teach.on ? `<button class="btn primary" type="button" data-act="tOpen">${ROLES[u.role].staff ? 'Teach' : 'Step through solution'}</button>` : ''}${randOn ? `<button class="btn" type="button" data-act="tryAnother">Try another</button>` : ''}<button class="btn" type="button" data-act="playBack">${pl.preview ? 'Back to editor' : 'Back to problems'}</button></div></div>${randOn ? `<p class="small muted" style="margin:-6px 0 10px">The numbers in this problem are drawn at random. <b>Try another</b> gives a fresh set; your best score is kept.</p>` : ''}`;
+  h += `<div class="creator"><div class="stack">${UI.teach.on && canTeach(u, it) ? teachHTML(P) : ''}<div class="panel pad stack"><h3>Problem</h3><p style="margin:0">${esc(P.prompt)}</p>${playForm(P)}</div>
+    <div class="panel pad stack"><h3>${P.ptype === 'stack' ? 'Stack data' : 'Drawing data'}</h3>${drawingTable(P, P.ptype === 'fcf' ? P.ans.feat : null)}</div></div>
+    <div class="cside"><div class="panel"><div id="viewerSlot" class="vslot"></div><div class="vbar"><span class="small muted">${P.shape === 'stack' ? 'Items laid end to end from the start line, on the side you chose. Numbers match the table.' : isModelStack(P) ? (loopOptsFor(u) ? 'Loop vectors, one color per row. Hover a row or vector to highlight it.' : 'Find the loop yourself. The vectors appear after you submit.') : 'Drag to rotate · scroll to zoom'}</span><button class="btn sm" type="button" data-act="viewReset">Reset view</button></div></div></div></div>`;
   return h;
 }
 function playForm(P){
@@ -897,8 +1350,8 @@ function playForm(P){
 }
 function grade(P, a){
   if (P.ptype === 'stack'){
-    const key = ASK[P.ans.ask][1](evalStack(P.dims.chain)), v = parseFloat(a.val), ok = Math.abs(v - key) <= (+P.ans.tol || .0005) + 1e-9;
-    const r = evalStack(P.dims.chain);
+    const key = ASK[P.ans.ask][1](evalStack(P.dims.chain, P.mrssF)), v = parseFloat(a.val), ok = Math.abs(v - key) <= (+P.ans.tol || .0005) + 1e-9;
+    const r = evalStack(P.dims.chain, P.mrssF);
     return {score: ok ? 100 : 0, html: `${ok ? 'Correct.' : 'Not quite.'} ${ASK[P.ans.ask][0]} = ${fmt(key)}.<br><span class="mono small">Mean ${fmt(r.mean)} · WC ±${fmt(r.wc)} · RSS ±${fmt(r.rss)}. Convert unequal tolerances to mean ± equal first: mean = nominal + (upper + lower)/2.</span>`};
   }
   if (P.ptype === 'accept'){
@@ -911,7 +1364,7 @@ function grade(P, a){
     const fs = P.features.filter(f => f.fcf && f.fcf.char), wrong = new Set(errorSet(P)); let right = 0;
     const lines = fs.map(f => { const said = !!(a.e && a.e[f.id]), is = wrong.has(f.id); if (said === is) right++;
       const why = is ? checkFCF(P,f).concat(f.fcf.planted && f.fcf.note ? [f.fcf.note] : []).join(' ') : 'This frame is valid.';
-      return `<b class="mono">${f.id}</b> ${said === is ? '✓' : '✗'} ${esc(why)}`; });
+      return `<b class="mono">${f.id}</b> ${said === is ? '✓' : '✗'} ${esc(why)}${f.fcf.why ? ` <span class="whyi">${esc(f.fcf.why)}</span>` : ''}`; });
     return {score: Math.round(right / Math.max(1, fs.length) * 100), html: lines.join('<br>')};
   }
   if (P.ptype === 'fcf'){
@@ -1130,7 +1583,7 @@ function toast(t){ const el = $('toast'); el.textContent = t; el.classList.add('
 function today(){ return new Date().toISOString().slice(0,10); }
 
 /* ===================== UI state ===================== */
-const UI = {tab:'learn', group:null, landingMsg:null, signupStep:null, signupEmail:'', reqMsg:null, confirm:null, pc:{draft:null, isNew:false}, play:{id:null, preview:false, ans:{}, result:null}};
+const UI = {teach:{on:false, step:0}, pick:null, tab:'learn', group:null, landingMsg:null, signupStep:null, signupEmail:'', reqMsg:null, confirm:null, pc:{draft:null, isNew:false}, play:{id:null, preview:false, ans:{}, result:null}};
 
 /* ===================== Signed-in identity (header) ===================== */
 function renderWho(){
@@ -1454,9 +1907,9 @@ function render(){
   $('main').innerHTML = (u && u.status === 'active') ? renderApp(u) : renderLanding();
   if (!u) return;
   if (u && u.status === 'active' && document.getElementById('viewerSlot')){
-    let P = UI.tab === 'creator' && UI.pc.draft ? UI.pc.draft.problem : UI.tab === 'play' ? (UI.play.preview ? UI.pc.draft : item(UI.play.id)).problem : null;
+    let P = UI.tab === 'creator' && UI.pc.draft ? UI.pc.draft.problem : UI.tab === 'play' ? playP(UI.play.preview ? UI.pc.draft : item(UI.play.id)) : null;
     if (P && UI.tab === 'play' && P.shape === 'stack' && UI.play.ans.orient) P = Object.assign({}, P, {dims: Object.assign({}, P.dims, {orient: UI.play.ans.orient})});
-    if (P) mountViewer(P, {ctx: UI.tab === 'creator' ? 'c' + (UI.pc.draft.id||'new') : 'p' + (UI.play.preview ? 'prev' : UI.play.id), reframe: UI.reframe}); UI.reframe = false;
+    if (P) mountViewer(P, {ctx: UI.tab === 'creator' ? 'c' + (UI.pc.draft.id||'new') : 'p' + (UI.play.preview ? 'prev' : UI.play.id), reframe: UI.reframe, loop: loopOptsFor(u)}); UI.reframe = false;
   }
 }
 
@@ -1534,7 +1987,7 @@ document.addEventListener('submit', ev => {
   }
   if (f.id === 'fPlay'){
     const it = UI.play.preview ? UI.pc.draft : item(UI.play.id); if (!it) return;
-    const res = grade(it.problem, UI.play.ans); UI.play.result = res;
+    const PP = playP(it), res = grade(PP, UI.play.ans); res.html += whyAfter(PP, UI.play.ans); UI.play.result = res;
     if (!UI.play.preview){ return act(() => { const pr = DB.progress[u.email] = DB.progress[u.email] || {}; const prev = (pr[it.id] || {}).score; pr[it.id] = Object.assign({}, pr[it.id], {opened:true, score: prev == null ? res.score : Math.max(prev, res.score)}); }); }
     return render();
   }
@@ -1558,19 +2011,34 @@ document.addEventListener('click', ev => {
   if (a === 'signout'){ UI.signupEmail = ''; UI.landingMsg = null; UI.signupStep = null; signOut(auth).then(() => toast('Signed out.')); return; }
   if (a === 'closeViewer'){ return closeViewer(); }
   if (a === 'starter' && can(u,'editContent')){ return act(() => { DB.catalog = starterCatalog(); }, 'Starter content loaded as drafts. Upload each lesson page, then publish.'); }
-  if (a === 'play'){ const it = item(id); if (!canOpen(u,it)) return; UI.play = {id, preview:false, ans: blankAns(it.problem), result:null}; UI.tab = 'play'; UI.reframe = true;
+  if (a === 'tryAnother'){ const it = UI.play.preview ? UI.pc.draft : item(UI.play.id); if (!it) return; const inst = makeInstance(it.problem);
+    UI.play.inst = inst; UI.play.ans = blankAns(inst || it.problem); UI.play.result = null; UI.teach = {on:false, step:0}; toast('New numbers drawn.'); return render(); }
+  if (a === 'pcRandAdd' && UI.pc.draft){ const P = UI.pc.draft.problem; (P.rand = P.rand || []).push({path:'', min:0, max:0, step:.0005}); return render(); }
+  if (a === 'pcRandDel' && UI.pc.draft){ UI.pc.draft.problem.rand.splice(+b.dataset.i, 1); return render(); }
+  if (a === 'tOpen'){ UI.teach = {on:true, step:0}; return render(); }
+  if (a === 'tClose'){ UI.teach = {on:false, step:0}; return render(); }
+  if (a === 'tNext' || a === 'tBack' || a === 'tAll' || a === 'tReset'){ return teachGo(a); }
+  if (a === 'pcPickFace' && UI.pc.draft){ UI.pick = {i: +b.dataset.i, end: b.dataset.end}; return render(); }
+  if (a === 'pcPickCancel'){ UI.pick = null; return render(); }
+  if (a === 'pcBodyAdd' && UI.pc.draft){ const P = UI.pc.draft.problem, bs = P.model.bodies; if (bs.length >= 6) return; const last = bs[bs.length-1];
+    bs.push(newBody(P, {name:'Body ' + (bs.length + 1), x0: last ? +((+last.x0||0) + (+last.len||0)).toFixed(4) : 0})); UI.reframe = true; return render(); }
+  if (a === 'pcBodyDel' && UI.pc.draft){ UI.pc.draft.problem.model.bodies.splice(+b.dataset.i, 1); UI.reframe = true; return render(); }
+  if (a === 'pcBodyEnd' && UI.pc.draft){ let x = 0; UI.pc.draft.problem.model.bodies.forEach(bd => { bd.x0 = +x.toFixed(4); x += +bd.len || 0; }); return render(); }
+  if (a === 'play'){ const it = item(id); if (!canOpen(u,it)) return; UI.teach = {on:false, step:0}; const inst = makeInstance(it.problem); UI.play = {id, preview:false, inst, ans: blankAns(inst || it.problem), result:null}; UI.tab = 'play'; UI.reframe = true;
     return act(() => { const pr = DB.progress[u.email] = DB.progress[u.email] || {}; pr[id] = Object.assign({}, pr[id], {opened:true}); }); }
   if (a === 'playBack'){ if (UI.play.preview){ UI.tab = 'creator'; } else { UI.tab = 'problems'; } UI.play.result = null; UI.reframe = true; return render(); }
   if (a === 'viewReset'){ if (VIEW.box) { frameView(); resizeViewer(); } return; }
-  if (a === 'pcEdit' && can(u,'createProblems')){ UI.pc = {draft: clone(item(id)), isNew:false}; UI.confirm = null; UI.reframe = true; return render(); }
+  if (a === 'pcEdit' && can(u,'createProblems')){ UI.pick = null; UI.pc = {draft: clone(item(id)), isNew:false}; UI.confirm = null; UI.reframe = true; return render(); }
   if (a === 'pcBack'){ UI.pc = {draft:null, isNew:false}; UI.confirm = null; return render(); }
-  if (a === 'pcPreview' && UI.pc.draft){ UI.play = {id: UI.pc.draft.id, preview:true, ans: blankAns(UI.pc.draft.problem), result:null}; UI.tab = 'play'; UI.reframe = true; return render(); }
+  if (a === 'pcPreview' && UI.pc.draft){ UI.teach = {on:false, step:0}; UI.pick = null; const inst = makeInstance(UI.pc.draft.problem); UI.play = {id: UI.pc.draft.id, preview:true, inst, ans: blankAns(inst || UI.pc.draft.problem), result:null}; UI.tab = 'play'; UI.reframe = true; return render(); }
   if (a === 'wsAdd'){ UI.play.ans.ws.push(wsRow()); return render(); }
   if (a === 'wsOrient'){ UI.play.ans.orient = b.dataset.v; return render(); }
   if (a === 'wsFmt'){ const to = b.dataset.v; if (UI.play.ans.fmt !== to){ UI.play.ans.ws = wsConvert(UI.play.ans.ws, to); UI.play.ans.fmt = to; } return render(); }
   if (a === 'wsClear'){ const f = UI.play.ans.fmt; UI.play.ans = blankAns({ptype:'stack'}); UI.play.ans.fmt = f; UI.play.result = null; return render(); }
   if (a === 'pcSave' && can(u,'createProblems') && UI.pc.draft){
     const d = UI.pc.draft; if (!d.title.trim()) return toast('Give the problem a title.');
+    if (isModelStack(d.problem)) d.problem.model.faces = stackFaces(d.problem).map(f => ({id: f.id, name: f.name, pos: +f.pos.toFixed(5)}));
+    UI.pick = null;
     return act(() => { const i = DB.catalog.findIndex(x => x.id === d.id); if (i >= 0) DB.catalog[i] = clone(d); else DB.catalog.push(clone(d)); UI.pc = {draft:null, isNew:false}; }, `Saved ${d.id.toUpperCase()} "${d.title}"${d.status === 'published' ? ' (published)' : ' as a draft'}.`);
   }
   if (a === 'pcDelete' && can(u,'createProblems') && UI.pc.draft){
@@ -1581,7 +2049,7 @@ document.addEventListener('click', ev => {
   if (a === 'pcFeatAdd' && UI.pc.draft){ const P = UI.pc.draft.problem; P.features.push(newFeature(P, $('pcKind').value)); return render(); }
   if (a === 'pcFeatDel' && UI.pc.draft){ const P = UI.pc.draft.problem, f = P.features[+b.dataset.i]; P.features.splice(+b.dataset.i, 1);
     Object.keys(P.datums).forEach(L => { if (P.datums[L] === 'feat:' + f.id) P.datums[L] = ''; }); return render(); }
-  if (a === 'pcRowAdd' && UI.pc.draft){ UI.pc.draft.problem.dims.chain.push({name:'New item', nom:.5, up:.002, lo:-.002, dir:'-'}); return render(); }
+  if (a === 'pcRowAdd' && UI.pc.draft){ UI.pc.draft.problem.dims.chain.push(Object.assign({name:'New item', nom:.5, up:.002, lo:-.002, dir:'-'}, isModelStack(UI.pc.draft.problem) ? {faceFrom:'', faceTo:''} : {})); return render(); }
   if (a === 'pcRowDel' && UI.pc.draft){ UI.pc.draft.problem.dims.chain.splice(+b.dataset.i, 1); return render(); }
   if (a === 'open'){
     const it = item(id); if (!canOpen(u, it)) return;
@@ -1674,7 +2142,10 @@ document.addEventListener('input', ev => {
 document.addEventListener('change', ev => {
   const el = ev.target, u = me();
   if (el.dataset.ws){ const [i,k] = el.dataset.ws.split('.'); const row = UI.play.ans.ws[+i]; if (row) row[k] = el.value; render(); rebindFocus(el.id); return; }
-  if (el.dataset.bind && UI.pc.draft){ setPath(UI.pc.draft, el.dataset.bind, readField(el)); render(); rebindFocus(el.id); return; }
+  if (el.dataset.bind && UI.pc.draft){ setPath(UI.pc.draft, el.dataset.bind, readField(el));
+    const fm = el.dataset.bind.match(/^problem\.dims\.chain\.(\d+)\.face(From|To)$/); if (fm) autoFromFaces(UI.pc.draft.problem, +fm[1]);
+    if (/^problem\.(ptype|model\.axis)$/.test(el.dataset.bind) || /^problem\.model\.bodies\./.test(el.dataset.bind)) UI.reframe = true;
+    render(); rebindFocus(el.id); return; }
   if (el.dataset.ans){ const a = UI.play.ans, k = el.dataset.ans; if (k.startsWith('e.')){ a.e = a.e || {}; a.e[k.slice(2)] = el.checked; } else a[k] = readField(el); if (el.tagName === 'SELECT' || el.type === 'checkbox'){ render(); } return; }
   if (a0(el) === 'upload'){ const it = item(el.dataset.id); if (it && can(u,'editContent')) uploadPage(it, el.files[0]); el.value = ''; return; }
   const a = el.dataset.act, id = el.dataset.id, email = el.dataset.email;
@@ -1695,10 +2166,26 @@ document.addEventListener('change', ev => {
 });
 
 function a0(el){ return el.dataset ? el.dataset.act : null; }
-document.addEventListener('keydown', ev => { if (ev.key === 'Escape' && !$('viewer').hidden) closeViewer(); });
+document.addEventListener('keydown', ev => { if (ev.key === 'Escape' && !$('viewer').hidden) closeViewer();
+  if (ev.key === 'Escape' && UI.pick){ UI.pick = null; render(); }
+  const tag = (ev.target.tagName || '').toLowerCase();
+  if (UI.teach.on && UI.tab === 'play' && !['input','select','textarea'].includes(tag)){
+    if (ev.key === 'ArrowRight'){ ev.preventDefault(); teachGo('tNext'); } if (ev.key === 'ArrowLeft'){ ev.preventDefault(); teachGo('tBack'); } } });
+function teachGo(a){
+  const it = UI.play.preview ? UI.pc.draft : item(UI.play.id); if (!it || !isModelStack(it.problem)) return;
+  const n = it.problem.dims.chain.length, t = UI.teach;
+  if (a === 'tNext') t.step = Math.min(n + 1, t.step + 1); if (a === 'tBack') t.step = Math.max(0, t.step - 1);
+  if (a === 'tAll') t.step = n + 1; if (a === 'tReset') t.step = 0;
+  render(); if (t.step >= 1 && t.step <= n) setLoopHL(t.step - 1);
+}
+// hovering a table row highlights its vector and faces (and the reverse, in onViewerMove)
+document.addEventListener('mouseover', ev => {
+  if (!VIEW.loop) return; const tr = ev.target.closest && ev.target.closest('[data-lrow]');
+  const i = tr ? +tr.dataset.lrow : null; if (i !== VIEW.hl) setLoopHL(i);
+});
 
 /* expose pure logic for testing */
-window.__access = {can, canOpen, ROLES, evalStack, evalAccept, checkFCF, grade, template, sampleProblems};
+window.__access = {makeInstance, randValue, randFields, activeRand, whyAfter, keyText, loopSegments, stackFaces, loopClosure, rowWarnings, stackResults, convText, can, canOpen, ROLES, evalStack, evalAccept, checkFCF, grade, template, sampleProblems};
 
 // ---- start-up: finish an email-link sign-in if this page was opened from one, then follow auth state ----
 if (isSignInWithEmailLink(auth, location.href)){
